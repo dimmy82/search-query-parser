@@ -125,7 +125,6 @@ impl Query {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use regex::Regex;
 
     #[test]
     fn test_replace_full_width_bracket_quotation_and_space_when_new() {
