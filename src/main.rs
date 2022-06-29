@@ -6,22 +6,25 @@ fn main() {
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-enum LayeredQuery {
+pub struct Query(String);
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct LayeredQueries(Vec<LayeredQuery>);
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub enum LayeredQuery {
     Query(Query),
-    Bracket(Vec<LayeredQuery>),
+    Bracket(LayeredQueries),
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-enum Condition {
+pub enum Condition {
     Keyword(String),
     ExactKeyword(String),
     Not(Box<Condition>),
     And(Vec<Condition>),
     Or(Vec<Condition>),
 }
-
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub struct Query(String);
 
 impl Query {
     pub fn new(value: String) -> Self {
@@ -42,7 +45,7 @@ impl Query {
         self.0.replace(" ", "").is_empty() == false
     }
 
-    fn layered_by_bracket(self) -> Result<Vec<LayeredQuery>> {
+    fn layered_by_bracket(self) -> Result<LayeredQueries> {
         fn filter_not_blank_query(regex_match: Option<Match>) -> Option<Query> {
             regex_match
                 .map(|m| Query::new(m.as_str().into()))
@@ -76,7 +79,7 @@ impl Query {
 
         fn combine_layered_query(
             query: Query, bracket_queries: &Vec<Query>,
-        ) -> Result<Vec<LayeredQuery>> {
+        ) -> Result<LayeredQueries> {
             let regex_layered_by_bracket = Regex::new(r"([^\(\)]*)\((\d)\)([^\(\)]*)")?;
             let mut layered_queries = Vec::<LayeredQuery>::new();
             regex_layered_by_bracket
@@ -101,7 +104,7 @@ impl Query {
             if layered_queries.is_empty() {
                 layered_queries.push(LayeredQuery::Query(query))
             }
-            Ok(layered_queries)
+            Ok(LayeredQueries(layered_queries))
         }
 
         Ok(combine_layered_query(
@@ -109,11 +112,12 @@ impl Query {
             &bracket_queries,
         )?)
     }
+}
 
+impl LayeredQueries {
     // k1 or (k2 and (-k3 or -k4))
     fn parse(self) -> Result<Condition> {
-        let layers = self.layered_by_bracket()?;
-        layers.into_iter().for_each(|layer| {});
+        self.0.into_iter().for_each(|layer| {});
         unimplemented!()
     }
 }
@@ -138,28 +142,30 @@ mod tests {
             Query::new("　ＡＡＡ　（”１１１　ＣＣＣ”　（（　ＤＤＤ　エエエ　）　ＦＦＦ）　ＧＧＧ　（ＨＨＨ　”あああ　いいい”　ううう））　”　ＪＪＪ　”　（ＫＫＫ　（　）　ＬＬＬ）　　（ＭＭＭ）　２２２　".into());
         assert_eq!(
             target.layered_by_bracket().unwrap(),
-            vec![
+            LayeredQueries(vec![
                 LayeredQuery::Query(Query::new(" ＡＡＡ ".into())),
-                LayeredQuery::Bracket(vec![
+                LayeredQuery::Bracket(LayeredQueries(vec![
                     LayeredQuery::Query(Query::new("\"１１１ ＣＣＣ\" ".into())),
-                    LayeredQuery::Bracket(vec![
-                        LayeredQuery::Bracket(vec![LayeredQuery::Query(Query::new(
-                            " ＤＤＤ エエエ ".into()
-                        )),]),
+                    LayeredQuery::Bracket(LayeredQueries(vec![
+                        LayeredQuery::Bracket(LayeredQueries(vec![LayeredQuery::Query(
+                            Query::new(" ＤＤＤ エエエ ".into())
+                        ),])),
                         LayeredQuery::Query(Query::new(" ＦＦＦ".into())),
-                    ]),
+                    ])),
                     LayeredQuery::Query(Query::new(" ＧＧＧ ".into())),
-                    LayeredQuery::Bracket(vec![LayeredQuery::Query(Query::new(
+                    LayeredQuery::Bracket(LayeredQueries(vec![LayeredQuery::Query(Query::new(
                         "ＨＨＨ \"あああ いいい\" ううう".into()
-                    )),])
-                ]),
+                    )),]))
+                ])),
                 LayeredQuery::Query(Query::new(" \" ＪＪＪ \" ".into())),
-                LayeredQuery::Bracket(vec![LayeredQuery::Query(Query::new(
+                LayeredQuery::Bracket(LayeredQueries(vec![LayeredQuery::Query(Query::new(
                     "ＫＫＫ  ＬＬＬ".into()
-                )),]),
-                LayeredQuery::Bracket(vec![LayeredQuery::Query(Query::new("ＭＭＭ".into())),]),
+                )),])),
+                LayeredQuery::Bracket(LayeredQueries(vec![LayeredQuery::Query(Query::new(
+                    "ＭＭＭ".into()
+                )),])),
                 LayeredQuery::Query(Query::new(" ２２２ ".into())),
-            ]
+            ])
         )
     }
 
@@ -168,7 +174,7 @@ mod tests {
         let target =
             Query::new("　ＡＡＡ　（”１１１　ＣＣＣ”　（（　ＤＤＤ　エエエ　）　ＦＦＦ）　ＧＧＧ　（ＨＨＨ　”あああ　いいい”　ううう））　”　ＪＪＪ　”　（ＫＫＫ　（　）　ＬＬＬ）　　（ＭＭＭ）　２２２　".into());
         assert_eq!(
-            target.parse().unwrap(),
+            target.layered_by_bracket().unwrap().parse().unwrap(),
             Condition::Or(vec![
                 Condition::Keyword("ＡＡＡ".into()),
                 Condition::Or(vec![
