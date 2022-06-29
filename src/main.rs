@@ -6,9 +6,9 @@ fn main() {
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-enum Layer {
+enum LayeredQuery {
     Query(Query),
-    Bracket(Vec<Layer>),
+    Bracket(Vec<LayeredQuery>),
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -42,29 +42,29 @@ impl Query {
         self.0.replace(" ", "").is_empty() == false
     }
 
-    fn layered_by_bracket(self) -> Result<Vec<Layer>> {
+    fn layered_by_bracket(self) -> Result<Vec<LayeredQuery>> {
+        fn filter_not_blank_query(regex_match: Option<Match>) -> Option<Query> {
+            regex_match
+                .map(|m| Query::new(m.as_str().into()))
+                .filter(|q| q.is_not_blank())
+        }
+
         fn pick_layer_by_bracket(
             query: String, bracket_queries: &mut Vec<Query>,
         ) -> Result<String> {
             let regex_bracket = Regex::new(r"\(([^\(\)]*)\)")?;
             let innermost_bracket_removed_query = regex_bracket
-                .replace_all(query.as_str(), |captures: &Captures| {
-                    match captures.get(1) {
-                        Some(m) => {
-                            let q = Query::new(m.as_str().into());
-                            match q.is_not_blank() {
-                                true => {
-                                    bracket_queries.push(q);
-                                    format!("（{}）", bracket_queries.len())
-                                }
-                                false => String::from(""),
-                            }
+                .replace_all(
+                    query.as_str(),
+                    |captures: &Captures| match filter_not_blank_query(captures.get(1)) {
+                        Some(q) => {
+                            bracket_queries.push(q);
+                            format!("（{}）", bracket_queries.len())
                         }
                         None => String::from(""),
-                    }
-                })
+                    },
+                )
                 .to_string();
-
             match query != innermost_bracket_removed_query {
                 true => pick_layer_by_bracket(innermost_bracket_removed_query, bracket_queries),
                 false => Ok(query),
@@ -74,20 +74,16 @@ impl Query {
         let mut bracket_queries = Vec::<Query>::new();
         let all_brackets_removed_query = pick_layer_by_bracket(self.0, &mut bracket_queries)?;
 
-        fn filter_not_blank_query(regex_match: Option<Match>) -> Option<Query> {
-            regex_match
-                .map(|m| Query::new(m.as_str().into()))
-                .filter(|q| q.is_not_blank())
-        }
-
-        fn combine_layered_query(query: Query, bracket_queries: &Vec<Query>) -> Result<Vec<Layer>> {
+        fn combine_layered_query(
+            query: Query, bracket_queries: &Vec<Query>,
+        ) -> Result<Vec<LayeredQuery>> {
             let regex_layered_by_bracket = Regex::new(r"([^\(\)]*)\((\d)\)([^\(\)]*)")?;
-            let mut layered_queries = Vec::<Layer>::new();
+            let mut layered_queries = Vec::<LayeredQuery>::new();
             regex_layered_by_bracket
                 .captures_iter(query.value())
                 .for_each(|captures| {
                     filter_not_blank_query(captures.get(1))
-                        .map(|q| layered_queries.push(Layer::Query(q)));
+                        .map(|q| layered_queries.push(LayeredQuery::Query(q)));
                     captures
                         .get(2)
                         .map(|m| m.as_str().parse::<usize>())
@@ -95,15 +91,15 @@ impl Query {
                             index.map(|i| {
                                 bracket_queries.get(i - 1).map(|q: &Query| {
                                     combine_layered_query(q.clone(), bracket_queries)
-                                        .map(|v| layered_queries.push(Layer::Bracket(v)))
+                                        .map(|v| layered_queries.push(LayeredQuery::Bracket(v)))
                                 })
                             })
                         });
                     filter_not_blank_query(captures.get(3))
-                        .map(|q| layered_queries.push(Layer::Query(q)));
+                        .map(|q| layered_queries.push(LayeredQuery::Query(q)));
                 });
             if layered_queries.is_empty() {
-                layered_queries.push(Layer::Query(query))
+                layered_queries.push(LayeredQuery::Query(query))
             }
             Ok(layered_queries)
         }
@@ -143,22 +139,26 @@ mod tests {
         assert_eq!(
             target.layered_by_bracket().unwrap(),
             vec![
-                Layer::Query(Query::new(" ＡＡＡ ".into())),
-                Layer::Bracket(vec![
-                    Layer::Query(Query::new("\"１１１ ＣＣＣ\" ".into())),
-                    Layer::Bracket(vec![
-                        Layer::Bracket(vec![Layer::Query(Query::new(" ＤＤＤ エエエ ".into())),]),
-                        Layer::Query(Query::new(" ＦＦＦ".into())),
+                LayeredQuery::Query(Query::new(" ＡＡＡ ".into())),
+                LayeredQuery::Bracket(vec![
+                    LayeredQuery::Query(Query::new("\"１１１ ＣＣＣ\" ".into())),
+                    LayeredQuery::Bracket(vec![
+                        LayeredQuery::Bracket(vec![LayeredQuery::Query(Query::new(
+                            " ＤＤＤ エエエ ".into()
+                        )),]),
+                        LayeredQuery::Query(Query::new(" ＦＦＦ".into())),
                     ]),
-                    Layer::Query(Query::new(" ＧＧＧ ".into())),
-                    Layer::Bracket(vec![Layer::Query(Query::new(
+                    LayeredQuery::Query(Query::new(" ＧＧＧ ".into())),
+                    LayeredQuery::Bracket(vec![LayeredQuery::Query(Query::new(
                         "ＨＨＨ \"あああ いいい\" ううう".into()
                     )),])
                 ]),
-                Layer::Query(Query::new(" \" ＪＪＪ \" ".into())),
-                Layer::Bracket(vec![Layer::Query(Query::new("ＫＫＫ  ＬＬＬ".into())),]),
-                Layer::Bracket(vec![Layer::Query(Query::new("ＭＭＭ".into())),]),
-                Layer::Query(Query::new(" ２２２ ".into())),
+                LayeredQuery::Query(Query::new(" \" ＪＪＪ \" ".into())),
+                LayeredQuery::Bracket(vec![LayeredQuery::Query(Query::new(
+                    "ＫＫＫ  ＬＬＬ".into()
+                )),]),
+                LayeredQuery::Bracket(vec![LayeredQuery::Query(Query::new("ＭＭＭ".into())),]),
+                LayeredQuery::Query(Query::new(" ２２２ ".into())),
             ]
         )
     }
