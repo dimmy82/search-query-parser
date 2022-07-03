@@ -108,18 +108,17 @@ impl Query {
         )?)
     }
 
-    fn parse_to_condition(self) -> Result<Condition> {
+    pub(crate) fn parse_to_condition(self) -> Result<Condition> {
+        let mut query = self.0;
         let mut negative_exact_keywords = Vec::<Query>::new();
         let mut exact_keywords = Vec::<Query>::new();
-
-        let mut query = self.0;
         vec![
             (
-                Regex::new("-\"(.*)\"")?,
+                Regex::new("-\"([^\"]*)\"")?,
                 &mut negative_exact_keywords,
                 "NEK",
             ),
-            (Regex::new("\"(.*)\"")?, &mut exact_keywords, "EK"),
+            (Regex::new("\"([^\"]*)\"")?, &mut exact_keywords, "EK"),
         ]
         .iter_mut()
         .for_each(|(regex, vec, prefix)| {
@@ -128,7 +127,7 @@ impl Query {
                     match Query::filter_not_blank_query(captures.get(1)) {
                         Some(q) => {
                             vec.push(q);
-                            format!("（{}:{}）", prefix, vec.len())
+                            format!("({}:{})", prefix, vec.len())
                         }
                         None => String::from(""),
                     }
@@ -140,6 +139,86 @@ impl Query {
             .replace_all(query.as_str(), |_: &Captures| String::from(" "))
             .to_string();
 
+        let regex_and_condition = Regex::new("([^ ]*) +(?i)[A|Ａ](?i)[N|Ｎ](?i)[D|Ｄ] +([^ ]*)")?;
+        let mut and_conditions = Vec::<Condition>::new();
+        let (mut is_start_with_an_and, mut is_end_with_an_and) = (false, false);
+        query = regex_and_condition
+            .replace_all(query.as_str(), |captures: &Captures| {
+                let (index, is_new_and_condition) = Query::filter_not_blank_query(captures.get(1))
+                    .map(|q| {
+                        let mut new_and_condition = Vec::<Condition>::new();
+                        keyword_condition(q.value(), &negative_exact_keywords, &exact_keywords)
+                            .map(|r| r.map(|c| new_and_condition.push(c)));
+                        and_conditions.push(Condition::Operator(Operator::And, new_and_condition));
+                        (and_conditions.len() - 1, true)
+                    })
+                    .unwrap_or_else(|| {
+                        if and_conditions.len() == 0 {
+                            is_start_with_an_and = true;
+                            and_conditions
+                                .push(Condition::Operator(Operator::And, Vec::<Condition>::new()));
+                            (and_conditions.len() - 1, true)
+                        } else {
+                            (and_conditions.len() - 1, false)
+                        }
+                    });
+                Query::filter_not_blank_query(captures.get(2))
+                    .map(|q| {
+                        match and_conditions.get_mut(index) {
+                            Some(Condition::Operator(Operator::And, and_condition)) => {
+                                keyword_condition(
+                                    q.value(),
+                                    &negative_exact_keywords,
+                                    &exact_keywords,
+                                )
+                                .map(|r| r.map(|c| and_condition.push(c)));
+                            }
+                            _ => (),
+                        };
+                    })
+                    .unwrap_or_else(|| {
+                        is_end_with_an_and = true;
+                        ()
+                    });
+                if is_new_and_condition {
+                    format!("(AND:{})", index + 1)
+                } else {
+                    String::from("")
+                }
+            })
+            .to_string();
+
+        fn keyword_condition(
+            k: &str, negative_exact_keywords: &Vec<Query>, exact_keywords: &Vec<Query>,
+        ) -> Result<Option<Condition>> {
+            Ok(
+                match (
+                    Regex::new(r"^\(NEK:(\d)\)$")?.captures(k),
+                    Regex::new(r"^\(EK:(\d)\)$")?.captures(k),
+                ) {
+                    (Some(nek), _) => Query::match_to_number(nek.get(1), |i| {
+                        negative_exact_keywords.get(i).map(|nek| {
+                            Condition::Negative(Box::new(Condition::ExactKeyword(
+                                nek.value().to_string(),
+                            )))
+                        })
+                    }),
+                    (_, Some(ek)) => Query::match_to_number(ek.get(1), |i| {
+                        exact_keywords
+                            .get(i)
+                            .map(|ek| Condition::ExactKeyword(ek.value().to_string()))
+                    }),
+                    (None, None) => match (k.len(), k.starts_with("-")) {
+                        (1, _) => Some(Condition::Keyword(k.into())),
+                        (_, true) => Some(Condition::Negative(Box::new(Condition::Keyword(
+                            k[1..k.len()].into(),
+                        )))),
+                        _ => Some(Condition::Keyword(k.into())),
+                    },
+                },
+            )
+        }
+
         let keywords = Regex::new(" +")?
             .split(query.as_str())
             .into_iter()
@@ -147,53 +226,7 @@ impl Query {
             .collect::<Vec<&str>>();
         println!("{:?}", keywords);
 
-        let mut current_operator = Operator::Or;
-        let mut current_conditions = Vec::<Condition>::new();
-        let mut is_last_keyword_a_operator = false;
-        for keyword in keywords.into_iter() {
-            match keyword {
-                k if Regex::new("^(?i)[A|Ａ](?i)[N|Ｎ](?i)[D|Ｄ]$")?.is_match(k) => {}
-                k => {
-                    let condition = match (
-                        Regex::new(r"^（NEK:(\d)）$")?.captures(k),
-                        Regex::new(r"^（EK:(\d)）$")?.captures(k),
-                    ) {
-                        (Some(nek), _) => Query::match_to_number(nek.get(1), |i| {
-                            negative_exact_keywords.get(i).map(|nek| {
-                                Condition::Negative(Box::new(Condition::ExactKeyword(
-                                    nek.value().to_string(),
-                                )))
-                            })
-                        }),
-                        (_, Some(ek)) => Query::match_to_number(ek.get(1), |i| {
-                            exact_keywords
-                                .get(i)
-                                .map(|ek| Condition::ExactKeyword(ek.value().to_string()))
-                        }),
-                        (None, None) => Some(if k.starts_with("-") {
-                            Condition::Negative(Box::new(Condition::Keyword(k.into())))
-                        } else {
-                            Condition::Keyword(k.into())
-                        }),
-                    };
-                    condition.map(|c| {
-                        match (is_last_keyword_a_operator, &current_operator) {
-                            (false, &Operator::And) => {
-                                let mut and_conditions = Vec::<Condition>::new();
-                                and_conditions.append(&mut current_conditions);
-                                current_conditions = Vec::<Condition>::new();
-                                current_conditions
-                                    .push(Condition::Operator(Operator::And, and_conditions));
-                                current_conditions.push(c);
-                                current_operator = Operator::Or;
-                            }
-                            _ => current_conditions.push(c),
-                        }
-                        is_last_keyword_a_operator = false;
-                    });
-                }
-            }
-        }
+        for keyword in keywords {}
 
         unimplemented!()
     }
@@ -248,7 +281,7 @@ mod tests {
 
     #[test]
     fn test_query_parse_to_condition() {
-        let target = Query::new("　ＡＡＡ　　Ａｎｄ　-ＢＢＢ　ＡnＤ　ＣorＣ　　ｃｃｃ　Ｏr　　ＤandＤ　anD　\"　ＥＥＥ　ＡNＤ　ＦＦＦ　\"　　ａnｄ　　-\"　ＧＧＧ　　oＲ　　ＨＨＨ　\"　　oＲ　　ＩＩＩ　and　".into());
+        let target = Query::new("　ＡＡＡ　　Ａｎｄ　-ＢＢＢ　ＡnＤ　ＣorＣ　　ｃｃｃ　Ｏr　　\"c1 and c2\"　　-\"c3 or c4\"　　ＤandＤ　anD　\"　ＥＥＥ　ＡNＤ　ＦＦＦ　\"　　ａnｄ　　-\"　ＧＧＧ　　oＲ　　ＨＨＨ　\"　　oＲ　　ＩＩＩ　and　".into());
         assert_eq!(
             target.parse_to_condition().unwrap(),
             Condition::Operator(
@@ -258,10 +291,13 @@ mod tests {
                         Operator::And,
                         vec![
                             Condition::Keyword("ＡＡＡ".into()),
-                            Condition::Negative(Box::new(Condition::Keyword("ＢＢＢ".into())))
+                            Condition::Negative(Box::new(Condition::Keyword("ＢＢＢ".into()))),
+                            Condition::Keyword("ＣorＣ".into()),
                         ]
                     ),
-                    Condition::Keyword("ＣorＣ".into()),
+                    Condition::Keyword("ｃｃｃ".into()),
+                    Condition::ExactKeyword("c1 and c2".into()),
+                    Condition::Negative(Box::new(Condition::ExactKeyword("c3 or c4".into()))),
                     Condition::Operator(
                         Operator::And,
                         vec![
