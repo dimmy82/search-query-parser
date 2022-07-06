@@ -188,6 +188,28 @@ impl Query {
             })
             .to_string();
 
+        let regex_and = Regex::new(r"^\(AND:(\d)\)$")?;
+        let mut conditions = Vec::<Condition>::new();
+        Regex::new(" +")?
+            .split(query.as_str())
+            .into_iter()
+            .filter(|k| !k.is_empty())
+            .for_each(|keyword| {
+                match regex_and.captures(keyword) {
+                    Some(c) => {
+                        Query::match_to_number(c.get(1), |i| {
+                            and_conditions
+                                .get(i - 1)
+                                .map(|condition| conditions.push(condition.clone()))
+                        });
+                    }
+                    None => {
+                        keyword_condition(keyword, &negative_exact_keywords, &exact_keywords)
+                            .map(|r| r.map(|c| conditions.push(c)));
+                    }
+                };
+            });
+
         fn keyword_condition(
             k: &str, negative_exact_keywords: &Vec<Query>, exact_keywords: &Vec<Query>,
         ) -> Result<Option<Condition>> {
@@ -197,7 +219,7 @@ impl Query {
                     Regex::new(r"^\(EK:(\d)\)$")?.captures(k),
                 ) {
                     (Some(nek), _) => Query::match_to_number(nek.get(1), |i| {
-                        negative_exact_keywords.get(i).map(|nek| {
+                        negative_exact_keywords.get(i - 1).map(|nek| {
                             Condition::Negative(Box::new(Condition::ExactKeyword(
                                 nek.value().to_string(),
                             )))
@@ -205,7 +227,7 @@ impl Query {
                     }),
                     (_, Some(ek)) => Query::match_to_number(ek.get(1), |i| {
                         exact_keywords
-                            .get(i)
+                            .get(i - 1)
                             .map(|ek| Condition::ExactKeyword(ek.value().to_string()))
                     }),
                     (None, None) => match (k.len(), k.starts_with("-")) {
@@ -219,16 +241,7 @@ impl Query {
             )
         }
 
-        let keywords = Regex::new(" +")?
-            .split(query.as_str())
-            .into_iter()
-            .filter(|k| !k.is_empty())
-            .collect::<Vec<&str>>();
-        println!("{:?}", keywords);
-
-        for keyword in keywords {}
-
-        unimplemented!()
+        Ok(Condition::Operator(Operator::Or, conditions))
     }
 }
 
@@ -282,8 +295,10 @@ mod tests {
     #[test]
     fn test_query_parse_to_condition() {
         let target = Query::new("　ＡＡＡ　　Ａｎｄ　-ＢＢＢ　ＡnＤ　ＣorＣ　　ｃｃｃ　Ｏr　　\"c1 and c2\"　　-\"c3 or c4\"　　ＤandＤ　anD　\"　ＥＥＥ　ＡNＤ　ＦＦＦ　\"　　ａnｄ　　-\"　ＧＧＧ　　oＲ　　ＨＨＨ　\"　　oＲ　　ＩＩＩ　and　".into());
+        let actual = target.parse_to_condition().unwrap();
+        println!("{:?}", actual);
         assert_eq!(
-            target.parse_to_condition().unwrap(),
+            actual,
             Condition::Operator(
                 Operator::Or,
                 vec![
@@ -301,14 +316,14 @@ mod tests {
                     Condition::Operator(
                         Operator::And,
                         vec![
-                            Condition::Keyword("ＤＤＤ".into()),
-                            Condition::ExactKeyword("ＥＥＥ and ＦＦＦ".into()),
+                            Condition::Keyword("ＤandＤ".into()),
+                            Condition::ExactKeyword(" ＥＥＥ ＡNＤ ＦＦＦ ".into()),
                             Condition::Negative(Box::new(Condition::ExactKeyword(
-                                "ＧＧＧ or ＨＨＨ".into()
+                                " ＧＧＧ  oＲ  ＨＨＨ ".into()
                             )))
                         ]
                     ),
-                    Condition::Keyword("ＩＩＩ".into()),
+                    Condition::Operator(Operator::And, vec![Condition::Keyword("ＩＩＩ".into())]),
                 ]
             )
         )
