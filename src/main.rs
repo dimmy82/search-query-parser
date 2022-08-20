@@ -1,26 +1,12 @@
-use crate::layered_queries::LayeredQueries;
+use crate::layered_query::LayeredQueries;
 use crate::query::Query;
 
-mod layered_queries;
+mod condition;
+mod layered_query;
 mod query;
 
 fn main() {
     println!("Hello, world!");
-}
-
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub enum LayeredQuery {
-    Query(Query),
-    Bracket(LayeredQueries),
-    NegativeBracket(LayeredQueries),
-}
-
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub enum Condition {
-    Keyword(String),
-    ExactKeyword(String),
-    Negative(Box<Condition>),
-    Operator(Operator, Vec<Condition>),
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]

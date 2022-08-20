@@ -1,11 +1,12 @@
-use crate::{Condition, LayeredQuery};
+use crate::condition::Condition;
+use crate::query::Query;
 use eyre::Result;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct LayeredQueries(Vec<LayeredQuery>);
 
 impl LayeredQueries {
-    pub fn new(layered_queries: Vec<LayeredQuery>) -> Self {
+    pub(crate) fn new(layered_queries: Vec<LayeredQuery>) -> Self {
         Self(layered_queries)
     }
 
@@ -21,6 +22,13 @@ impl LayeredQueries {
             });
         unimplemented!()
     }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub enum LayeredQuery {
+    Query(Query),
+    Bracket(LayeredQueries),
+    NegativeBracket(LayeredQueries),
 }
 
 #[cfg(test)]
