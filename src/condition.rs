@@ -107,6 +107,17 @@ mod tests {
         }
 
         #[test]
+        fn test_simplify_negative_negative_negative() {
+            assert_eq!(
+                Condition::Negative(Box::new(Condition::Negative(Box::new(
+                    Condition::Negative(Box::new(Condition::Keyword("keyword".into())))
+                ))))
+                .simplify(),
+                Condition::Negative(Box::new(Condition::Keyword("keyword".into())))
+            )
+        }
+
+        #[test]
         fn test_simplify_negative_operator_and() {
             assert_eq!(
                 Condition::Negative(Box::new(Condition::Operator(
