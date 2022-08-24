@@ -8,7 +8,7 @@ use regex::{Captures, Match, Regex};
 pub struct Query(String);
 
 impl Query {
-    pub fn new(value: String) -> Self {
+    pub(crate) fn new(value: String) -> Self {
         Query(
             value
                 .replace("（", "(")
@@ -18,13 +18,21 @@ impl Query {
         )
     }
 
-    fn filter_not_blank_query(regex_match: Option<Match>) -> Option<Query> {
+    pub(crate) fn value(self) -> String {
+        self.0
+    }
+
+    pub(crate) fn value_ref(&self) -> &str {
+        self.0.as_str()
+    }
+
+    pub(crate) fn filter_not_blank_query(regex_match: Option<Match>) -> Option<Query> {
         regex_match
             .map(|m| Query::new(m.as_str().into()))
             .filter(|q| q.is_not_blank())
     }
 
-    fn match_to_number<F: FnOnce(usize) -> Option<R>, R>(
+    pub(crate) fn match_to_number<F: FnOnce(usize) -> Option<R>, R>(
         regex_match: Option<Match>, call_back: F,
     ) -> Option<R> {
         regex_match
@@ -33,118 +41,23 @@ impl Query {
             .flatten()
     }
 
-    pub fn value(&self) -> &str {
-        self.0.as_str()
-    }
-
-    fn is_not_blank(&self) -> bool {
-        self.value().replace(" ", "").is_empty() == false
-    }
-
-    pub fn layered_by_bracket(self) -> Result<LayeredQueries> {
-        fn pick_layer_by_bracket(
-            query: String, bracket_queries: &mut Vec<Query>,
-        ) -> Result<String> {
-            let regex_bracket = Regex::new(r"\(([^\(\)]*)\)")?;
-            let innermost_bracket_removed_query = regex_bracket
-                .replace_all(query.as_str(), |captures: &Captures| {
-                    match Query::filter_not_blank_query(captures.get(1)) {
-                        Some(q) => {
-                            bracket_queries.push(q);
-                            format!("（{}）", bracket_queries.len())
-                        }
-                        None => String::from(""),
-                    }
-                })
-                .to_string();
-            match query != innermost_bracket_removed_query {
-                true => pick_layer_by_bracket(innermost_bracket_removed_query, bracket_queries),
-                false => Ok(query),
-            }
-        }
-
-        let mut bracket_queries = Vec::<Query>::new();
-        let all_brackets_replace_query = pick_layer_by_bracket(self.0, &mut bracket_queries)?;
-
-        fn combine_layered_query(
-            query: Query, bracket_queries: &Vec<Query>,
-        ) -> Result<LayeredQueries> {
-            let regex_layered_by_bracket = Regex::new(r"([^\(\)]*)\((\d)\)")?;
-            let mut layered_queries = Vec::<LayeredQuery>::new();
-            let the_last_query_after_all_brackets = regex_layered_by_bracket
-                .replace_all(query.value(), |captures: &Captures| {
-                    let mut is_negative_bracket = false;
-                    Query::filter_not_blank_query(captures.get(1)).map(|mut q| {
-                        if q.value().ends_with("-") {
-                            is_negative_bracket = true;
-                            q = Query::new(String::from(&q.value()[0..q.value().len() - 1]))
-                        }
-                        if q.is_not_blank() {
-                            layered_queries.push(LayeredQuery::Query(q))
-                        }
-                    });
-                    Query::match_to_number(captures.get(2), |i| {
-                        bracket_queries.get(i - 1).map(|q: &Query| {
-                            combine_layered_query(q.clone(), bracket_queries).map(|v| {
-                                layered_queries.push(if is_negative_bracket {
-                                    LayeredQuery::NegativeBracket(v)
-                                } else {
-                                    LayeredQuery::Bracket(v)
-                                })
-                            })
-                        })
-                    });
-                    String::from("")
-                })
-                .to_string();
-            let the_last_query = Query::new(the_last_query_after_all_brackets);
-            if the_last_query.is_not_blank() {
-                layered_queries.push(LayeredQuery::Query(the_last_query))
-            }
-            Ok(LayeredQueries::new(layered_queries))
-        }
-
-        Ok(combine_layered_query(
-            Query::new(all_brackets_replace_query),
-            &bracket_queries,
-        )?)
+    pub(crate) fn is_not_blank(&self) -> bool {
+        self.value_ref().replace(" ", "").is_empty() == false
     }
 
     pub(crate) fn parse_to_condition(self) -> Result<Condition> {
-        let mut query = self.0;
-        let mut negative_exact_keywords = Vec::<Query>::new();
-        let mut exact_keywords = Vec::<Query>::new();
-        vec![
-            (
-                Regex::new("-\"([^\"]*)\"")?,
-                &mut negative_exact_keywords,
-                "NEK",
-            ),
-            (Regex::new("\"([^\"]*)\"")?, &mut exact_keywords, "EK"),
-        ]
-        .iter_mut()
-        .for_each(|(regex, vec, prefix)| {
-            query = regex
-                .replace_all(query.as_str(), |captures: &Captures| {
-                    match Query::filter_not_blank_query(captures.get(1)) {
-                        Some(q) => {
-                            vec.push(q);
-                            format!("({}:{})", prefix, vec.len())
-                        }
-                        None => String::from(""),
-                    }
-                })
-                .to_string()
-        });
+        let (mut query, negative_exact_keywords, exact_keywords) = self.parse_exact_keyword()?;
 
-        query = Regex::new(" +(?i)[A|Ａ](?i)[N|Ｎ](?i)[D|Ｄ] +")?
-            .replace_all(query.as_str(), |_: &Captures| String::from(" "))
-            .to_string();
+        query = Query::new(
+            Regex::new(" +(?i)[A|Ａ](?i)[N|Ｎ](?i)[D|Ｄ] +")?
+                .replace_all(query.value_ref(), |_: &Captures| String::from(" "))
+                .to_string(),
+        );
 
         let mut or_conditions = Vec::<Condition>::new();
         let (mut is_start_with_or, mut is_end_with_or) = (false, false);
         let or_queries = Regex::new(" +(?i)[O|Ｏ](?i)[R|Ｒ] +")?
-            .split(query.as_str())
+            .split(query.value_ref())
             .into_iter()
             .collect::<Vec<&str>>();
         let and_regex = Regex::new(" +")?;
@@ -161,7 +74,7 @@ impl Query {
                 }
                 (true, _) => {
                     let and_conditions = and_regex
-                        .split(query.value())
+                        .split(query.value_ref())
                         .into_iter()
                         .filter_map(|k| {
                             let q = Query::new(k.into());
@@ -171,12 +84,9 @@ impl Query {
                             }
                         })
                         .filter_map(|keyword| {
-                            keyword_condition(
-                                keyword.value(),
-                                &negative_exact_keywords,
-                                &exact_keywords,
-                            )
-                            .unwrap_or(None)
+                            keyword
+                                .keyword_condition(&negative_exact_keywords, &exact_keywords)
+                                .unwrap_or(None)
                         })
                         .collect::<Vec<Condition>>();
                     or_conditions.push(Condition::Operator(Operator::And, and_conditions));
@@ -185,37 +95,68 @@ impl Query {
         });
 
         return Ok(Condition::Operator(Operator::Or, or_conditions).simplify());
+    }
 
-        fn keyword_condition(
-            k: &str, negative_exact_keywords: &Vec<Query>, exact_keywords: &Vec<Query>,
-        ) -> Result<Option<Condition>> {
-            Ok(
-                match (
-                    Regex::new(r"^\(NEK:(\d)\)$")?.captures(k),
-                    Regex::new(r"^\(EK:(\d)\)$")?.captures(k),
-                ) {
-                    (Some(nek), _) => Query::match_to_number(nek.get(1), |i| {
-                        negative_exact_keywords.get(i - 1).map(|nek| {
-                            Condition::Negative(Box::new(Condition::ExactKeyword(
-                                nek.value().to_string(),
-                            )))
-                        })
-                    }),
-                    (_, Some(ek)) => Query::match_to_number(ek.get(1), |i| {
-                        exact_keywords
-                            .get(i - 1)
-                            .map(|ek| Condition::ExactKeyword(ek.value().to_string()))
-                    }),
-                    (None, None) => match (k.len(), k.starts_with("-")) {
-                        (1, _) => Some(Condition::Keyword(k.into())),
-                        (_, true) => Some(Condition::Negative(Box::new(Condition::Keyword(
-                            k[1..k.len()].into(),
-                        )))),
-                        _ => Some(Condition::Keyword(k.into())),
-                    },
-                },
+    fn parse_exact_keyword(self) -> Result<(Self, Vec<Query>, Vec<Query>)> {
+        let mut query = self;
+        let mut negative_exact_keywords = Vec::<Query>::new();
+        let mut exact_keywords = Vec::<Query>::new();
+        vec![
+            (
+                Regex::new("-\"([^\"]*)\"")?,
+                &mut negative_exact_keywords,
+                "NEK",
+            ),
+            (Regex::new("\"([^\"]*)\"")?, &mut exact_keywords, "EK"),
+        ]
+        .iter_mut()
+        .for_each(|(regex, vec, prefix)| {
+            query = Query::new(
+                regex
+                    .replace_all(query.value_ref(), |captures: &Captures| {
+                        match Query::filter_not_blank_query(captures.get(1)) {
+                            Some(q) => {
+                                vec.push(q);
+                                format!("({}:{})", prefix, vec.len())
+                            }
+                            None => String::from(""),
+                        }
+                    })
+                    .to_string(),
             )
-        }
+        });
+        Ok((query, negative_exact_keywords, exact_keywords))
+    }
+
+    fn keyword_condition(
+        self, negative_exact_keywords: &Vec<Query>, exact_keywords: &Vec<Query>,
+    ) -> Result<Option<Condition>> {
+        Ok(
+            match (
+                Regex::new(r"^\(NEK:(\d)\)$")?.captures(self.value_ref()),
+                Regex::new(r"^\(EK:(\d)\)$")?.captures(self.value_ref()),
+            ) {
+                (Some(nek), _) => Query::match_to_number(nek.get(1), |i| {
+                    negative_exact_keywords.get(i - 1).map(|nek| {
+                        Condition::Negative(Box::new(Condition::ExactKeyword(
+                            nek.value_ref().to_string(),
+                        )))
+                    })
+                }),
+                (_, Some(ek)) => Query::match_to_number(ek.get(1), |i| {
+                    exact_keywords
+                        .get(i - 1)
+                        .map(|ek| Condition::ExactKeyword(ek.value_ref().to_string()))
+                }),
+                (None, None) => match (self.value_ref().len(), self.value_ref().starts_with("-")) {
+                    (1, _) => Some(Condition::Keyword(self.value())),
+                    (_, true) => Some(Condition::Negative(Box::new(Condition::Keyword(
+                        self.value_ref()[1..self.value_ref().len()].into(),
+                    )))),
+                    _ => Some(Condition::Keyword(self.value())),
+                },
+            },
+        )
     }
 }
 
@@ -229,41 +170,8 @@ mod tests {
         let target =
             Query::new("　ＡＡＡ　（”１１１　ＣＣＣ”　（-（　ＤＤＤ　エエエ　）　ＦＦＦ）　ＧＧＧ　（ＨＨＨ　-”あああ　いいい”　ううう））　”　ＪＪＪ　”　-（ＫＫＫ　（　）　ＬＬＬ）　　（ＭＭＭ）　２２２　".into());
         assert_eq!(
-            target.value(),
+            target.value_ref(),
             " ＡＡＡ (\"１１１ ＣＣＣ\" (-( ＤＤＤ エエエ ) ＦＦＦ) ＧＧＧ (ＨＨＨ -\"あああ いいい\" ううう)) \" ＪＪＪ \" -(ＫＫＫ ( ) ＬＬＬ)  (ＭＭＭ) ２２２ "
-        )
-    }
-
-    #[test]
-    fn test_layered_by_bracket() {
-        let target =
-            Query::new("　ＡＡＡ　（”１１１　ＣＣＣ”　（-（　ＤＤＤ　エエエ　）　ＦＦＦ）　ＧＧＧ　（ＨＨＨ　-”あああ　いいい”　ううう））　”　ＪＪＪ　”　-（ＫＫＫ　（　）　ＬＬＬ）　　（ＭＭＭ）　２２２　".into());
-        assert_eq!(
-            target.layered_by_bracket().unwrap(),
-            LayeredQueries::new(vec![
-                LayeredQuery::Query(Query::new(" ＡＡＡ ".into())),
-                LayeredQuery::Bracket(LayeredQueries::new(vec![
-                    LayeredQuery::Query(Query::new("\"１１１ ＣＣＣ\" ".into())),
-                    LayeredQuery::Bracket(LayeredQueries::new(vec![
-                        LayeredQuery::NegativeBracket(LayeredQueries::new(vec![
-                            LayeredQuery::Query(Query::new(" ＤＤＤ エエエ ".into())),
-                        ])),
-                        LayeredQuery::Query(Query::new(" ＦＦＦ".into())),
-                    ])),
-                    LayeredQuery::Query(Query::new(" ＧＧＧ ".into())),
-                    LayeredQuery::Bracket(LayeredQueries::new(vec![LayeredQuery::Query(
-                        Query::new("ＨＨＨ -\"あああ いいい\" ううう".into())
-                    ),]))
-                ])),
-                LayeredQuery::Query(Query::new(" \" ＪＪＪ \" ".into())),
-                LayeredQuery::NegativeBracket(LayeredQueries::new(vec![LayeredQuery::Query(
-                    Query::new("ＫＫＫ  ＬＬＬ".into())
-                ),])),
-                LayeredQuery::Bracket(LayeredQueries::new(vec![LayeredQuery::Query(Query::new(
-                    "ＭＭＭ".into()
-                )),])),
-                LayeredQuery::Query(Query::new(" ２２２ ".into())),
-            ])
         )
     }
 
