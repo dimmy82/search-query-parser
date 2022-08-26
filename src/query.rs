@@ -1,6 +1,6 @@
 use crate::condition::Condition;
 use crate::layered_query::{LayeredQueries, LayeredQuery};
-use crate::Operator;
+use crate::{is_not_blank, Operator};
 use eyre::Result;
 use regex::{Captures, Match, Regex};
 
@@ -42,11 +42,11 @@ impl Query {
     }
 
     pub(crate) fn is_not_blank(&self) -> bool {
-        self.value_ref().replace(" ", "").is_empty() == false
+        is_not_blank(self.value_ref())
     }
 
-    pub(crate) fn parse_to_condition(self) -> Result<Condition> {
-        let (mut query, negative_exact_keywords, exact_keywords) = self.parse_exact_keyword()?;
+    pub(crate) fn to_condition(self) -> Result<Condition> {
+        let (mut query, negative_exact_keywords, exact_keywords) = self.extract_exact_keyword()?;
 
         query = Query::new(
             Regex::new(" +(?i)[A|Ａ](?i)[N|Ｎ](?i)[D|Ｄ] +")?
@@ -97,7 +97,7 @@ impl Query {
         return Ok(Condition::Operator(Operator::Or, or_conditions).simplify());
     }
 
-    fn parse_exact_keyword(self) -> Result<(Self, Vec<Query>, Vec<Query>)> {
+    fn extract_exact_keyword(self) -> Result<(Self, Vec<Query>, Vec<Query>)> {
         let mut query = self;
         let mut negative_exact_keywords = Vec::<Query>::new();
         let mut exact_keywords = Vec::<Query>::new();
@@ -176,30 +176,30 @@ mod tests {
     }
 
     #[test]
-    fn test_query_parse_to_condition_only_space() {
+    fn test_query_to_condition_only_space() {
         let target = Query::new("　   　".into());
-        let actual = target.parse_to_condition().unwrap();
+        let actual = target.to_condition().unwrap();
         assert_eq!(actual, Condition::None)
     }
 
     #[test]
-    fn test_query_parse_to_condition_only_one_keyword() {
+    fn test_query_to_condition_only_one_keyword() {
         let target = Query::new("ＡＡＡ".into());
-        let actual = target.parse_to_condition().unwrap();
+        let actual = target.to_condition().unwrap();
         assert_eq!(actual, Condition::Keyword("ＡＡＡ".into()))
     }
 
     #[test]
-    fn test_query_parse_to_condition_only_one_exact_keyword() {
+    fn test_query_to_condition_only_one_exact_keyword() {
         let target = Query::new("\"ＡＡＡ　ＢＢＢ\"".into());
-        let actual = target.parse_to_condition().unwrap();
+        let actual = target.to_condition().unwrap();
         assert_eq!(actual, Condition::ExactKeyword("ＡＡＡ ＢＢＢ".into()))
     }
 
     #[test]
-    fn test_query_parse_to_condition_only_one_negative_keyword() {
+    fn test_query_to_condition_only_one_negative_keyword() {
         let target = Query::new("-ＡＡＡ".into());
-        let actual = target.parse_to_condition().unwrap();
+        let actual = target.to_condition().unwrap();
         assert_eq!(
             actual,
             Condition::Negative(Box::new(Condition::Keyword("ＡＡＡ".into())))
@@ -207,9 +207,9 @@ mod tests {
     }
 
     #[test]
-    fn test_query_parse_to_condition_only_one_negative_exact_keyword() {
+    fn test_query_to_condition_only_one_negative_exact_keyword() {
         let target = Query::new("-\"ＡＡＡ　ＢＢＢ\"".into());
-        let actual = target.parse_to_condition().unwrap();
+        let actual = target.to_condition().unwrap();
         assert_eq!(
             actual,
             Condition::Negative(Box::new(Condition::ExactKeyword("ＡＡＡ ＢＢＢ".into())))
@@ -217,9 +217,9 @@ mod tests {
     }
 
     #[test]
-    fn test_query_parse_to_condition_only_one_double_negative_keyword() {
+    fn test_query_to_condition_only_one_double_negative_keyword() {
         let target = Query::new("--ＡＡＡ".into());
-        let actual = target.parse_to_condition().unwrap();
+        let actual = target.to_condition().unwrap();
         assert_eq!(
             actual,
             Condition::Negative(Box::new(Condition::Keyword("-ＡＡＡ".into())))
@@ -227,9 +227,9 @@ mod tests {
     }
 
     #[test]
-    fn test_query_parse_to_condition_two_keywords() {
+    fn test_query_to_condition_two_keywords() {
         let target = Query::new("ＡＡＡ　ＢＢＢ".into());
-        let actual = target.parse_to_condition().unwrap();
+        let actual = target.to_condition().unwrap();
         assert_eq!(
             actual,
             Condition::Operator(
@@ -243,9 +243,9 @@ mod tests {
     }
 
     #[test]
-    fn test_query_parse_to_condition_two_exact_keywords() {
+    fn test_query_to_condition_two_exact_keywords() {
         let target = Query::new("\"ＡＡＡ　ＢＢＢ\"　\"ＣＣＣ　ＤＤＤ\"".into());
-        let actual = target.parse_to_condition().unwrap();
+        let actual = target.to_condition().unwrap();
         assert_eq!(
             actual,
             Condition::Operator(
@@ -259,9 +259,9 @@ mod tests {
     }
 
     #[test]
-    fn test_query_parse_to_condition_two_negative_keywords() {
+    fn test_query_to_condition_two_negative_keywords() {
         let target = Query::new("-ＡＡＡ　-ＢＢＢ".into());
-        let actual = target.parse_to_condition().unwrap();
+        let actual = target.to_condition().unwrap();
         assert_eq!(
             actual,
             Condition::Operator(
@@ -275,9 +275,9 @@ mod tests {
     }
 
     #[test]
-    fn test_query_parse_to_condition_two_negative_exact_keywords() {
+    fn test_query_to_condition_two_negative_exact_keywords() {
         let target = Query::new("-\"ＡＡＡ　ＢＢＢ\"　-\"ＣＣＣ　ＤＤＤ\"".into());
-        let actual = target.parse_to_condition().unwrap();
+        let actual = target.to_condition().unwrap();
         assert_eq!(
             actual,
             Condition::Operator(
@@ -291,9 +291,9 @@ mod tests {
     }
 
     #[test]
-    fn test_query_parse_to_condition_two_keywords_with_or() {
+    fn test_query_to_condition_two_keywords_with_or() {
         let target = Query::new("ＡＡＡ or　ＢＢＢ".into());
-        let actual = target.parse_to_condition().unwrap();
+        let actual = target.to_condition().unwrap();
         assert_eq!(
             actual,
             Condition::Operator(
@@ -307,9 +307,9 @@ mod tests {
     }
 
     #[test]
-    fn test_query_parse_to_condition_two_exact_keywords_with_or() {
+    fn test_query_to_condition_two_exact_keywords_with_or() {
         let target = Query::new("\"ＡＡＡ　ＢＢＢ\" or　\"ＣＣＣ　ＤＤＤ\"".into());
-        let actual = target.parse_to_condition().unwrap();
+        let actual = target.to_condition().unwrap();
         assert_eq!(
             actual,
             Condition::Operator(
@@ -323,9 +323,9 @@ mod tests {
     }
 
     #[test]
-    fn test_query_parse_to_condition_two_negative_keywords_with_or() {
+    fn test_query_to_condition_two_negative_keywords_with_or() {
         let target = Query::new("-ＡＡＡ or　-ＢＢＢ".into());
-        let actual = target.parse_to_condition().unwrap();
+        let actual = target.to_condition().unwrap();
         assert_eq!(
             actual,
             Condition::Operator(
@@ -339,9 +339,9 @@ mod tests {
     }
 
     #[test]
-    fn test_query_parse_to_condition_two_negative_exact_keywords_with_or() {
+    fn test_query_to_condition_two_negative_exact_keywords_with_or() {
         let target = Query::new("-\"ＡＡＡ　ＢＢＢ\" or　-\"ＣＣＣ　ＤＤＤ\"".into());
-        let actual = target.parse_to_condition().unwrap();
+        let actual = target.to_condition().unwrap();
         assert_eq!(
             actual,
             Condition::Operator(
@@ -355,9 +355,9 @@ mod tests {
     }
 
     #[test]
-    fn test_query_parse_to_condition_two_keywords_with_and() {
+    fn test_query_to_condition_two_keywords_with_and() {
         let target = Query::new("ＡＡＡ and　ＢＢＢ".into());
-        let actual = target.parse_to_condition().unwrap();
+        let actual = target.to_condition().unwrap();
         assert_eq!(
             actual,
             Condition::Operator(
@@ -371,9 +371,9 @@ mod tests {
     }
 
     #[test]
-    fn test_query_parse_to_condition_two_exact_keywords_with_and() {
+    fn test_query_to_condition_two_exact_keywords_with_and() {
         let target = Query::new("\"ＡＡＡ　ＢＢＢ\" and　\"ＣＣＣ　ＤＤＤ\"".into());
-        let actual = target.parse_to_condition().unwrap();
+        let actual = target.to_condition().unwrap();
         assert_eq!(
             actual,
             Condition::Operator(
@@ -387,9 +387,9 @@ mod tests {
     }
 
     #[test]
-    fn test_query_parse_to_condition_two_negative_keywords_with_and() {
+    fn test_query_to_condition_two_negative_keywords_with_and() {
         let target = Query::new("-ＡＡＡ and　-ＢＢＢ".into());
-        let actual = target.parse_to_condition().unwrap();
+        let actual = target.to_condition().unwrap();
         assert_eq!(
             actual,
             Condition::Operator(
@@ -403,9 +403,9 @@ mod tests {
     }
 
     #[test]
-    fn test_query_parse_to_condition_two_negative_exact_keywords_with_and() {
+    fn test_query_to_condition_two_negative_exact_keywords_with_and() {
         let target = Query::new("-\"ＡＡＡ　ＢＢＢ\" and　-\"ＣＣＣ　ＤＤＤ\"".into());
-        let actual = target.parse_to_condition().unwrap();
+        let actual = target.to_condition().unwrap();
         assert_eq!(
             actual,
             Condition::Operator(
@@ -419,11 +419,11 @@ mod tests {
     }
 
     #[test]
-    fn test_query_parse_to_condition_multi_keywords_with_or_and() {
+    fn test_query_to_condition_multi_keywords_with_or_and() {
         let target = Query::new(
             "ＡＡＡ and　ＢＢＢ or ＣＣＣ ＤＤＤ and ＥＥＥ or ＦＦＦ or ＧＧＧ ＨＨＨ".into(),
         );
-        let actual = target.parse_to_condition().unwrap();
+        let actual = target.to_condition().unwrap();
         assert_eq!(
             actual,
             Condition::Operator(
@@ -458,9 +458,9 @@ mod tests {
     }
 
     #[test]
-    fn test_query_parse_to_condition_full_pattern() {
+    fn test_query_to_condition_full_pattern() {
         let target = Query::new("　ＡＡＡ　　Ａｎｄ　-ＢＢＢ　ＡnＤ　ＣorＣ　　ｃｃｃ　Ｏr　　\"c1 and c2\"　　-\"c3 or c4\"　　ＤandＤ　anD　\"　ＥＥＥ　ＡNＤ　ＦＦＦ　\"　　ａnｄ　　-\"　ＧＧＧ　　oＲ　　ＨＨＨ　\"　　oＲ　　ＩＩＩ　and　".into());
-        let actual = target.parse_to_condition().unwrap();
+        let actual = target.to_condition().unwrap();
         assert_eq!(
             actual,
             Condition::Operator(

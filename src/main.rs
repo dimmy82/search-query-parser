@@ -14,3 +14,7 @@ pub enum Operator {
     And,
     Or,
 }
+
+pub(crate) fn is_not_blank(s: &str) -> bool {
+    s.replace(" ", "").is_empty() == false
+}
