@@ -1,21 +1,14 @@
 use crate::condition::Condition;
-use crate::layered_query::{LayeredQueries, LayeredQuery};
-use crate::{is_not_blank, Operator};
+use crate::{filter_not_blank_query, match_to_number, Operator};
 use eyre::Result;
-use regex::{Captures, Match, Regex};
+use regex::{Captures, Regex};
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct Query(String);
 
 impl Query {
-    pub(crate) fn new(value: String) -> Self {
-        Query(
-            value
-                .replace("（", "(")
-                .replace("）", ")")
-                .replace("”", "\"")
-                .replace("　", " "),
-        )
+    pub fn new(value: String) -> Self {
+        Self(value)
     }
 
     pub(crate) fn value(self) -> String {
@@ -26,27 +19,23 @@ impl Query {
         self.0.as_str()
     }
 
-    pub(crate) fn filter_not_blank_query(regex_match: Option<Match>) -> Option<Query> {
-        regex_match
-            .map(|m| Query::new(m.as_str().into()))
-            .filter(|q| q.is_not_blank())
-    }
-
-    pub(crate) fn match_to_number<F: FnOnce(usize) -> Option<R>, R>(
-        regex_match: Option<Match>, call_back: F,
-    ) -> Option<R> {
-        regex_match
-            .map(|m| m.as_str().parse::<usize>())
-            .map(|index| index.map(|i| call_back(i)).unwrap_or(None))
-            .flatten()
+    pub(crate) fn normalize(self) -> Self {
+        Self(
+            self.value()
+                .replace("（", "(")
+                .replace("）", ")")
+                .replace("”", "\"")
+                .replace("　", " "),
+        )
     }
 
     pub(crate) fn is_not_blank(&self) -> bool {
-        is_not_blank(self.value_ref())
+        self.value_ref().replace(" ", "").is_empty() == false
     }
 
     pub(crate) fn to_condition(self) -> Result<Condition> {
-        let (mut query, negative_exact_keywords, exact_keywords) = self.extract_exact_keyword()?;
+        let query = self.normalize();
+        let (mut query, negative_exact_keywords, exact_keywords) = query.extract_exact_keyword()?;
 
         query = Query::new(
             Regex::new(" +(?i)[A|Ａ](?i)[N|Ｎ](?i)[D|Ｄ] +")?
@@ -114,7 +103,7 @@ impl Query {
             query = Query::new(
                 regex
                     .replace_all(query.value_ref(), |captures: &Captures| {
-                        match Query::filter_not_blank_query(captures.get(1)) {
+                        match filter_not_blank_query(captures.get(1)) {
                             Some(q) => {
                                 vec.push(q);
                                 format!("({}:{})", prefix, vec.len())
@@ -136,14 +125,14 @@ impl Query {
                 Regex::new(r"^\(NEK:(\d)\)$")?.captures(self.value_ref()),
                 Regex::new(r"^\(EK:(\d)\)$")?.captures(self.value_ref()),
             ) {
-                (Some(nek), _) => Query::match_to_number(nek.get(1), |i| {
+                (Some(nek), _) => match_to_number(nek.get(1), |i| {
                     negative_exact_keywords.get(i - 1).map(|nek| {
                         Condition::Negative(Box::new(Condition::ExactKeyword(
                             nek.value_ref().to_string(),
                         )))
                     })
                 }),
-                (_, Some(ek)) => Query::match_to_number(ek.get(1), |i| {
+                (_, Some(ek)) => match_to_number(ek.get(1), |i| {
                     exact_keywords
                         .get(i - 1)
                         .map(|ek| Condition::ExactKeyword(ek.value_ref().to_string()))
@@ -163,14 +152,13 @@ impl Query {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::layered_query::LayeredQueries;
 
     #[test]
-    fn test_replace_full_width_bracket_quotation_and_space_when_new() {
+    fn test_normalize_replace_full_width_bracket_quotation_and_space() {
         let target =
             Query::new("　ＡＡＡ　（”１１１　ＣＣＣ”　（-（　ＤＤＤ　エエエ　）　ＦＦＦ）　ＧＧＧ　（ＨＨＨ　-”あああ　いいい”　ううう））　”　ＪＪＪ　”　-（ＫＫＫ　（　）　ＬＬＬ）　　（ＭＭＭ）　２２２　".into());
         assert_eq!(
-            target.value_ref(),
+            target.normalize().value_ref(),
             " ＡＡＡ (\"１１１ ＣＣＣ\" (-( ＤＤＤ エエエ ) ＦＦＦ) ＧＧＧ (ＨＨＨ -\"あああ いいい\" ううう)) \" ＪＪＪ \" -(ＫＫＫ ( ) ＬＬＬ)  (ＭＭＭ) ２２２ "
         )
     }

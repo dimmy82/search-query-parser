@@ -1,5 +1,4 @@
 use crate::condition::Condition::{Negative, Operator};
-use std::borrow::Borrow;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum Condition {
@@ -43,7 +42,6 @@ impl Condition {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Operator;
 
     #[test]
     fn test_simplify_none() {
