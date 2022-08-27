@@ -12,7 +12,7 @@ fn main() {
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub enum Operator {
+pub(crate) enum Operator {
     And,
     Or,
 }

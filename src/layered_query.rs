@@ -5,22 +5,22 @@ use eyre::Result;
 use regex::{Captures, Regex};
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub enum LayeredQuery {
+pub(crate) enum LayeredQuery {
     Query(Query),
     Bracket(LayeredQueries),
     NegativeBracket(LayeredQueries),
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub struct LayeredQueries(Vec<LayeredQuery>);
+pub(crate) struct LayeredQueries(Vec<LayeredQuery>);
 
 impl LayeredQueries {
     pub(crate) fn parse(query: Query) -> Result<LayeredQueries> {
         let query = query.normalize();
         let mut bracket_queries = Vec::<Query>::new();
-        let all_brackets_replace_query = Self::pick_layer_by_bracket(query, &mut bracket_queries)?;
+        let all_brackets_picked_query = Self::pick_layer_by_bracket(query, &mut bracket_queries)?;
         Ok(Self::combine_layered_query(
-            all_brackets_replace_query,
+            all_brackets_picked_query,
             &bracket_queries,
         )?)
     }
@@ -48,8 +48,8 @@ impl LayeredQueries {
     }
 
     fn combine_layered_query(query: Query, bracket_queries: &Vec<Query>) -> Result<LayeredQueries> {
-        let mut layered_queries = Vec::<LayeredQuery>::new();
         let regex_layered_by_bracket = Regex::new(r"([^（）]*)（(\d)）")?;
+        let mut layered_queries = Vec::<LayeredQuery>::new();
         let the_last_query_after_all_brackets = regex_layered_by_bracket
             .replace_all(query.value_ref(), |captures: &Captures| {
                 let mut is_negative_bracket = false;
@@ -129,37 +129,31 @@ mod tests {
         }
 
         #[test]
-        fn test_parse_with_only_start_bracket() {
+        fn test_parse_with_bracket() {
             let query = Query::new(
-                "　ＡＡＡ　”１１１　ＣＣＣ”　-（ＤＤＤ　or　エエエ　and　（　ＦＦＦ　-”あああ　いいい”"
+                "　ＡＡＡ　”１１１　ＣＣＣ”　（-ＤＤＤ　or　エエエ）　and　ＦＦＦ　-”あああ　いいい”"
                     .into(),
             );
             assert_eq!(
                 LayeredQueries::parse(query.clone()).unwrap(),
-                LayeredQueries(vec![LayeredQuery::Query(Query::new_with_normalize(
-                    query.value()
-                ))])
+                LayeredQueries(vec![
+                    LayeredQuery::Query(Query::new_with_normalize(
+                        "　ＡＡＡ　”１１１　ＣＣＣ”　".into()
+                    )),
+                    LayeredQuery::Bracket(LayeredQueries(vec![LayeredQuery::Query(
+                        Query::new_with_normalize("-ＤＤＤ　or　エエエ".into())
+                    )])),
+                    LayeredQuery::Query(Query::new_with_normalize(
+                        "　and　ＦＦＦ　-”あああ　いいい”".into()
+                    ))
+                ])
             )
         }
 
         #[test]
-        fn test_parse_with_only_end_bracket() {
+        fn test_parse_with_negative_bracket() {
             let query = Query::new(
-                "　ＡＡＡ　”１１１　ＣＣＣ”）　-ＤＤＤ　or　エエエ　）　and　ＦＦＦ　-”あああ　いいい”"
-                    .into(),
-            );
-            assert_eq!(
-                LayeredQueries::parse(query.clone()).unwrap(),
-                LayeredQueries(vec![LayeredQuery::Query(Query::new_with_normalize(
-                    query.value()
-                ))])
-            )
-        }
-
-        #[test]
-        fn test_parse_with_start_bracket_more_than_end_bracket() {
-            let query = Query::new(
-                "　ＡＡＡ　”１１１　ＣＣＣ”　-（ＤＤＤ　or　エエエ）　and　（　ＦＦＦ　-”あああ　いいい”"
+                "　ＡＡＡ　”１１１　ＣＣＣ”　-（ＤＤＤ　or　エエエ）　and　ＦＦＦ　-”あああ　いいい”"
                     .into(),
             );
             assert_eq!(
@@ -172,52 +166,113 @@ mod tests {
                         Query::new_with_normalize("ＤＤＤ　or　エエエ".into())
                     )])),
                     LayeredQuery::Query(Query::new_with_normalize(
-                        "　and　（　ＦＦＦ　-”あああ　いいい”".into()
+                        "　and　ＦＦＦ　-”あああ　いいい”".into()
                     ))
                 ])
             )
         }
 
         #[test]
-        fn test_parse_with_start_bracket_less_than_end_bracket() {
+        fn test_parse_with_multi_brackets_in_same_layer() {
             let query = Query::new(
-                "　ＡＡＡ　”１１１　ＣＣＣ”　-（ＤＤＤ　or　エエエ）　and　）　ＦＦＦ　-”あああ　いいい”"
+                "（　ＡＡＡ　”１１１　ＣＣＣ”）　（-ＤＤＤ　or　エエエ）　and　（ＦＦＦ　-”あああ　いいい”）"
                     .into(),
             );
             assert_eq!(
                 LayeredQueries::parse(query.clone()).unwrap(),
                 LayeredQueries(vec![
-                    LayeredQuery::Query(Query::new_with_normalize(
-                        "　ＡＡＡ　”１１１　ＣＣＣ”　".into()
-                    )),
-                    LayeredQuery::NegativeBracket(LayeredQueries(vec![LayeredQuery::Query(
-                        Query::new_with_normalize("ＤＤＤ　or　エエエ".into())
+                    LayeredQuery::Bracket(LayeredQueries(vec![LayeredQuery::Query(
+                        Query::new_with_normalize("　ＡＡＡ　”１１１　ＣＣＣ”".into())
                     )])),
-                    LayeredQuery::Query(Query::new_with_normalize(
-                        "　and　）　ＦＦＦ　-”あああ　いいい”".into()
-                    ))
+                    LayeredQuery::Bracket(LayeredQueries(vec![LayeredQuery::Query(
+                        Query::new_with_normalize("-ＤＤＤ　or　エエエ".into())
+                    )])),
+                    LayeredQuery::Query(Query::new_with_normalize("　and　".into())),
+                    LayeredQuery::Bracket(LayeredQueries(vec![LayeredQuery::Query(
+                        Query::new_with_normalize("ＦＦＦ　-”あああ　いいい”".into())
+                    )]))
                 ])
             )
         }
 
         #[test]
-        fn test_parse_with_reverse_bracket() {
+        fn test_parse_with_multi_brackets_or_negative_brackets_in_same_layer() {
             let query = Query::new(
-                "　ＡＡＡ）　”１１１　ＣＣＣ”　-（ＤＤＤ　or　エエエ）　and　（　ＦＦＦ　-”あああ　いいい”"
+                "（　ＡＡＡ　”１１１　ＣＣＣ”）-（ＤＤＤ　or　エエエ）　and　（ＦＦＦ　-”あああ　いいい”）"
                     .into(),
             );
             assert_eq!(
                 LayeredQueries::parse(query.clone()).unwrap(),
                 LayeredQueries(vec![
-                    LayeredQuery::Query(Query::new_with_normalize(
-                        "　ＡＡＡ）　”１１１　ＣＣＣ”　".into()
-                    )),
+                    LayeredQuery::Bracket(LayeredQueries(vec![LayeredQuery::Query(
+                        Query::new_with_normalize("　ＡＡＡ　”１１１　ＣＣＣ”".into())
+                    )])),
                     LayeredQuery::NegativeBracket(LayeredQueries(vec![LayeredQuery::Query(
                         Query::new_with_normalize("ＤＤＤ　or　エエエ".into())
                     )])),
-                    LayeredQuery::Query(Query::new_with_normalize(
-                        "　and　（　ＦＦＦ　-”あああ　いいい”".into()
-                    ))
+                    LayeredQuery::Query(Query::new_with_normalize("　and　".into())),
+                    LayeredQuery::Bracket(LayeredQueries(vec![LayeredQuery::Query(
+                        Query::new_with_normalize("ＦＦＦ　-”あああ　いいい”".into())
+                    )]))
+                ])
+            )
+        }
+
+        #[test]
+        fn test_parse_with_multi_brackets_in_layers() {
+            let query = Query::new(
+                "　ＡＡＡ　（”１１１　ＣＣＣ”　or　（（エエエ　or　ＦＦＦ　-”あああ　いいい”）　and　-ＤＤＤ））　and　ＥＥＥ"
+                    .into(),
+            );
+            assert_eq!(
+                LayeredQueries::parse(query.clone()).unwrap(),
+                LayeredQueries(vec![
+                    LayeredQuery::Query(Query::new_with_normalize("　ＡＡＡ　".into())),
+                    LayeredQuery::Bracket(LayeredQueries(vec![
+                        LayeredQuery::Query(Query::new_with_normalize(
+                            "”１１１　ＣＣＣ”　or　".into()
+                        )),
+                        LayeredQuery::Bracket(LayeredQueries(vec![
+                            LayeredQuery::Bracket(LayeredQueries(vec![LayeredQuery::Query(
+                                Query::new_with_normalize(
+                                    "エエエ　or　ＦＦＦ　-”あああ　いいい”".into()
+                                )
+                            )])),
+                            LayeredQuery::Query(Query::new_with_normalize("　and　-ＤＤＤ".into()))
+                        ]))
+                    ])),
+                    LayeredQuery::Query(Query::new_with_normalize("　and　ＥＥＥ".into())),
+                ])
+            )
+        }
+
+        #[test]
+        fn test_parse_with_multi_brackets_or_negative_brackets_in_layers() {
+            let query = Query::new(
+                "　ＡＡＡ　-（”１１１　ＣＣＣ”　or　（-（エエエ　or　ＦＦＦ　-”あああ　いいい”）　and　（-ＤＤＤ or -ＥＥＥ）））　and　ＦＦＦ"
+                    .into(),
+            );
+            assert_eq!(
+                LayeredQueries::parse(query.clone()).unwrap(),
+                LayeredQueries(vec![
+                    LayeredQuery::Query(Query::new_with_normalize("　ＡＡＡ　".into())),
+                    LayeredQuery::NegativeBracket(LayeredQueries(vec![
+                        LayeredQuery::Query(Query::new_with_normalize(
+                            "”１１１　ＣＣＣ”　or　".into()
+                        )),
+                        LayeredQuery::Bracket(LayeredQueries(vec![
+                            LayeredQuery::NegativeBracket(LayeredQueries(vec![
+                                LayeredQuery::Query(Query::new_with_normalize(
+                                    "エエエ　or　ＦＦＦ　-”あああ　いいい”".into()
+                                ))
+                            ])),
+                            LayeredQuery::Query(Query::new_with_normalize("　and　".into())),
+                            LayeredQuery::Bracket(LayeredQueries(vec![LayeredQuery::Query(
+                                Query::new_with_normalize("-ＤＤＤ or -ＥＥＥ".into())
+                            )]))
+                        ]))
+                    ])),
+                    LayeredQuery::Query(Query::new_with_normalize("　and　ＦＦＦ".into())),
                 ])
             )
         }
@@ -253,6 +308,122 @@ mod tests {
                         Query::new_with_normalize("ＭＭＭ".into())
                     ),])),
                     LayeredQuery::Query(Query::new_with_normalize(" ２２２ ".into())),
+                ])
+            )
+        }
+
+        #[test]
+        fn test_parse_with_empty_bracket() {
+            let query = Query::new(
+                "　ＡＡＡ　（　　）　”１１１　ＣＣＣ”　（-ＤＤＤ　or　エエエ）　and　ＦＦＦ　（）　-”あああ　いいい”"
+                    .into(),
+            );
+            assert_eq!(
+                LayeredQueries::parse(query.clone()).unwrap(),
+                LayeredQueries(vec![
+                    LayeredQuery::Query(Query::new_with_normalize(
+                        "　ＡＡＡ　　”１１１　ＣＣＣ”　".into()
+                    )),
+                    LayeredQuery::Bracket(LayeredQueries(vec![LayeredQuery::Query(
+                        Query::new_with_normalize("-ＤＤＤ　or　エエエ".into())
+                    )])),
+                    LayeredQuery::Query(Query::new_with_normalize(
+                        "　and　ＦＦＦ　　-”あああ　いいい”".into()
+                    ))
+                ])
+            )
+        }
+
+        #[test]
+        fn test_parse_with_only_start_bracket() {
+            let query = Query::new(
+                "　ＡＡＡ　”１１１　ＣＣＣ”　-（ＤＤＤ　or　エエエ　and　（　ＦＦＦ　-”あああ　いいい”"
+                    .into(),
+            );
+            assert_eq!(
+                LayeredQueries::parse(query.clone()).unwrap(),
+                LayeredQueries(vec![LayeredQuery::Query(Query::new_with_normalize(
+                    query.value()
+                ))])
+            )
+        }
+
+        #[test]
+        fn test_parse_with_only_end_bracket() {
+            let query = Query::new(
+                "　ＡＡＡ　”１１１　ＣＣＣ”）　-ＤＤＤ　or　エエエ　）　and　ＦＦＦ　-”あああ　いいい”"
+                    .into(),
+            );
+            assert_eq!(
+                LayeredQueries::parse(query.clone()).unwrap(),
+                LayeredQueries(vec![LayeredQuery::Query(Query::new_with_normalize(
+                    query.value()
+                ))])
+            )
+        }
+
+        #[test]
+        fn test_parse_with_start_bracket_more_than_end_bracket() {
+            let query = Query::new(
+                "　ＡＡＡ　（”１１１　ＣＣＣ”　（ＤＤＤ　or　エエエ）　and　（　ＦＦＦ　-”あああ　いいい”"
+                    .into(),
+            );
+            assert_eq!(
+                LayeredQueries::parse(query.clone()).unwrap(),
+                LayeredQueries(vec![
+                    LayeredQuery::Query(Query::new_with_normalize(
+                        "　ＡＡＡ　（”１１１　ＣＣＣ”　".into()
+                    )),
+                    LayeredQuery::Bracket(LayeredQueries(vec![LayeredQuery::Query(
+                        Query::new_with_normalize("ＤＤＤ　or　エエエ".into())
+                    )])),
+                    LayeredQuery::Query(Query::new_with_normalize(
+                        "　and　（　ＦＦＦ　-”あああ　いいい”".into()
+                    ))
+                ])
+            )
+        }
+
+        #[test]
+        fn test_parse_with_start_bracket_less_than_end_bracket() {
+            let query = Query::new(
+                "　ＡＡＡ）　”１１１　ＣＣＣ”　（ＤＤＤ　or　エエエ）　and　）　ＦＦＦ　-”あああ　いいい”"
+                    .into(),
+            );
+            assert_eq!(
+                LayeredQueries::parse(query.clone()).unwrap(),
+                LayeredQueries(vec![
+                    LayeredQuery::Query(Query::new_with_normalize(
+                        "　ＡＡＡ）　”１１１　ＣＣＣ”　".into()
+                    )),
+                    LayeredQuery::Bracket(LayeredQueries(vec![LayeredQuery::Query(
+                        Query::new_with_normalize("ＤＤＤ　or　エエエ".into())
+                    )])),
+                    LayeredQuery::Query(Query::new_with_normalize(
+                        "　and　）　ＦＦＦ　-”あああ　いいい”".into()
+                    ))
+                ])
+            )
+        }
+
+        #[test]
+        fn test_parse_with_reverse_bracket() {
+            let query = Query::new(
+                "　ＡＡＡ）　”１１１　ＣＣＣ”　（ＤＤＤ　or　エエエ）　and　（　ＦＦＦ　-”あああ　いいい”"
+                    .into(),
+            );
+            assert_eq!(
+                LayeredQueries::parse(query.clone()).unwrap(),
+                LayeredQueries(vec![
+                    LayeredQuery::Query(Query::new_with_normalize(
+                        "　ＡＡＡ）　”１１１　ＣＣＣ”　".into()
+                    )),
+                    LayeredQuery::Bracket(LayeredQueries(vec![LayeredQuery::Query(
+                        Query::new_with_normalize("ＤＤＤ　or　エエエ".into())
+                    )])),
+                    LayeredQuery::Query(Query::new_with_normalize(
+                        "　and　（　ＦＦＦ　-”あああ　いいい”".into()
+                    ))
                 ])
             )
         }

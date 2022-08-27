@@ -1,7 +1,7 @@
 use crate::condition::Condition::{Negative, Operator};
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub enum Condition {
+pub(crate) enum Condition {
     None,
     Keyword(String),
     ExactKeyword(String),

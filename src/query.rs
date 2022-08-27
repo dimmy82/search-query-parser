@@ -4,10 +4,10 @@ use eyre::Result;
 use regex::{Captures, Regex};
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub struct Query(String);
+pub(crate) struct Query(String);
 
 impl Query {
-    pub fn new(value: String) -> Self {
+    pub(crate) fn new(value: String) -> Self {
         Self(value)
     }
 
