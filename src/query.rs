@@ -33,7 +33,7 @@ impl Query {
         self.value_ref().replace(" ", "").is_empty() == false
     }
 
-    pub(crate) fn to_condition(self) -> Result<Condition> {
+    pub(crate) fn to_condition(self) -> Result<(bool, Condition, bool)> {
         let query = self.normalize();
         let (mut query, negative_exact_keywords, exact_keywords) = query.extract_exact_keyword()?;
 
@@ -55,9 +55,9 @@ impl Query {
             let query = Query::new(q.into());
             match (query.is_not_blank(), i) {
                 (false, index) => {
-                    if index == 0 {
+                    if index == 0 && or_queries_last_index > 0 {
                         is_start_with_or = true
-                    } else if index == or_queries_last_index {
+                    } else if index == or_queries_last_index && or_queries_last_index > 0 {
                         is_end_with_or = true
                     }
                 }
@@ -83,7 +83,11 @@ impl Query {
             }
         });
 
-        return Ok(Condition::Operator(Operator::Or, or_conditions).simplify());
+        return Ok((
+            is_start_with_or,
+            Condition::Operator(Operator::Or, or_conditions).simplify(),
+            is_end_with_or,
+        ));
     }
 
     fn extract_exact_keyword(self) -> Result<(Self, Vec<Query>, Vec<Query>)> {
@@ -106,7 +110,7 @@ impl Query {
                         match filter_not_blank_query(captures.get(1)) {
                             Some(q) => {
                                 vec.push(q);
-                                format!("({}:{})", prefix, vec.len())
+                                format!(" ({}:{}) ", prefix, vec.len())
                             }
                             None => String::from(""),
                         }
@@ -167,21 +171,28 @@ mod tests {
     fn test_query_to_condition_only_space() {
         let target = Query::new("　   　".into());
         let actual = target.to_condition().unwrap();
-        assert_eq!(actual, Condition::None)
+        assert_eq!(actual, (false, Condition::None, false))
     }
 
     #[test]
     fn test_query_to_condition_only_one_keyword() {
         let target = Query::new("ＡＡＡ".into());
         let actual = target.to_condition().unwrap();
-        assert_eq!(actual, Condition::Keyword("ＡＡＡ".into()))
+        assert_eq!(actual, (false, Condition::Keyword("ＡＡＡ".into()), false))
     }
 
     #[test]
     fn test_query_to_condition_only_one_exact_keyword() {
         let target = Query::new("\"ＡＡＡ　ＢＢＢ\"".into());
         let actual = target.to_condition().unwrap();
-        assert_eq!(actual, Condition::ExactKeyword("ＡＡＡ ＢＢＢ".into()))
+        assert_eq!(
+            actual,
+            (
+                false,
+                Condition::ExactKeyword("ＡＡＡ ＢＢＢ".into()),
+                false
+            )
+        )
     }
 
     #[test]
@@ -190,7 +201,11 @@ mod tests {
         let actual = target.to_condition().unwrap();
         assert_eq!(
             actual,
-            Condition::Negative(Box::new(Condition::Keyword("ＡＡＡ".into())))
+            (
+                false,
+                Condition::Negative(Box::new(Condition::Keyword("ＡＡＡ".into()))),
+                false
+            )
         )
     }
 
@@ -200,7 +215,11 @@ mod tests {
         let actual = target.to_condition().unwrap();
         assert_eq!(
             actual,
-            Condition::Negative(Box::new(Condition::ExactKeyword("ＡＡＡ ＢＢＢ".into())))
+            (
+                false,
+                Condition::Negative(Box::new(Condition::ExactKeyword("ＡＡＡ ＢＢＢ".into()))),
+                false
+            )
         )
     }
 
@@ -210,7 +229,11 @@ mod tests {
         let actual = target.to_condition().unwrap();
         assert_eq!(
             actual,
-            Condition::Negative(Box::new(Condition::Keyword("-ＡＡＡ".into())))
+            (
+                false,
+                Condition::Negative(Box::new(Condition::Keyword("-ＡＡＡ".into()))),
+                false
+            )
         )
     }
 
@@ -220,12 +243,16 @@ mod tests {
         let actual = target.to_condition().unwrap();
         assert_eq!(
             actual,
-            Condition::Operator(
-                Operator::And,
-                vec![
-                    Condition::Keyword("ＡＡＡ".into()),
-                    Condition::Keyword("ＢＢＢ".into())
-                ]
+            (
+                false,
+                Condition::Operator(
+                    Operator::And,
+                    vec![
+                        Condition::Keyword("ＡＡＡ".into()),
+                        Condition::Keyword("ＢＢＢ".into())
+                    ]
+                ),
+                false
             )
         )
     }
@@ -236,12 +263,16 @@ mod tests {
         let actual = target.to_condition().unwrap();
         assert_eq!(
             actual,
-            Condition::Operator(
-                Operator::And,
-                vec![
-                    Condition::ExactKeyword("ＡＡＡ ＢＢＢ".into()),
-                    Condition::ExactKeyword("ＣＣＣ ＤＤＤ".into())
-                ]
+            (
+                false,
+                Condition::Operator(
+                    Operator::And,
+                    vec![
+                        Condition::ExactKeyword("ＡＡＡ ＢＢＢ".into()),
+                        Condition::ExactKeyword("ＣＣＣ ＤＤＤ".into())
+                    ]
+                ),
+                false
             )
         )
     }
@@ -252,12 +283,16 @@ mod tests {
         let actual = target.to_condition().unwrap();
         assert_eq!(
             actual,
-            Condition::Operator(
-                Operator::And,
-                vec![
-                    Condition::Negative(Box::new(Condition::Keyword("ＡＡＡ".into()))),
-                    Condition::Negative(Box::new(Condition::Keyword("ＢＢＢ".into())))
-                ]
+            (
+                false,
+                Condition::Operator(
+                    Operator::And,
+                    vec![
+                        Condition::Negative(Box::new(Condition::Keyword("ＡＡＡ".into()))),
+                        Condition::Negative(Box::new(Condition::Keyword("ＢＢＢ".into())))
+                    ]
+                ),
+                false
             )
         )
     }
@@ -268,12 +303,66 @@ mod tests {
         let actual = target.to_condition().unwrap();
         assert_eq!(
             actual,
-            Condition::Operator(
-                Operator::And,
-                vec![
-                    Condition::Negative(Box::new(Condition::ExactKeyword("ＡＡＡ ＢＢＢ".into()))),
-                    Condition::Negative(Box::new(Condition::ExactKeyword("ＣＣＣ ＤＤＤ".into())))
-                ]
+            (
+                false,
+                Condition::Operator(
+                    Operator::And,
+                    vec![
+                        Condition::Negative(Box::new(Condition::ExactKeyword(
+                            "ＡＡＡ ＢＢＢ".into()
+                        ))),
+                        Condition::Negative(Box::new(Condition::ExactKeyword(
+                            "ＣＣＣ ＤＤＤ".into()
+                        )))
+                    ]
+                ),
+                false
+            )
+        )
+    }
+
+    #[test]
+    fn test_query_to_condition_multi_keywords() {
+        let target = Query::new("ＡＡＡ　\"ＢＢＢ\"　-\"ＣＣＣ\"　-ＤＤＤ".into());
+        let actual = target.to_condition().unwrap();
+        assert_eq!(
+            actual,
+            (
+                false,
+                Condition::Operator(
+                    Operator::And,
+                    vec![
+                        Condition::Keyword("ＡＡＡ".into()),
+                        Condition::ExactKeyword("ＢＢＢ".into()),
+                        Condition::Negative(Box::new(Condition::ExactKeyword("ＣＣＣ".into()))),
+                        Condition::Negative(Box::new(Condition::Keyword("ＤＤＤ".into())))
+                    ]
+                ),
+                false
+            )
+        )
+    }
+
+    #[test]
+    fn test_query_to_condition_multi_keywords_without_space() {
+        let target = Query::new("ＡＡＡ\"ＢＢＢ\"\"ｂｂｂ\"-\"ＣＣＣ\"-\"ｃｃｃ\"-ＤＤＤ".into());
+        let actual = target.to_condition().unwrap();
+        assert_eq!(
+            actual,
+            (
+                false,
+                Condition::Operator(
+                    Operator::And,
+                    vec![
+                        Condition::Keyword("ＡＡＡ".into()),
+                        Condition::ExactKeyword("ＢＢＢ".into()),
+                        Condition::ExactKeyword("ｂｂｂ".into()),
+                        Condition::Negative(Box::new(Condition::ExactKeyword("ＣＣＣ".into()))),
+                        Condition::Negative(Box::new(Condition::ExactKeyword("ｃｃｃ".into()))),
+                        Condition::Negative(Box::new(Condition::Keyword("ＤＤＤ".into())))
+                    ]
+                ),
+                false
             )
         )
     }
@@ -284,12 +373,16 @@ mod tests {
         let actual = target.to_condition().unwrap();
         assert_eq!(
             actual,
-            Condition::Operator(
-                Operator::Or,
-                vec![
-                    Condition::Keyword("ＡＡＡ".into()),
-                    Condition::Keyword("ＢＢＢ".into())
-                ]
+            (
+                false,
+                Condition::Operator(
+                    Operator::Or,
+                    vec![
+                        Condition::Keyword("ＡＡＡ".into()),
+                        Condition::Keyword("ＢＢＢ".into())
+                    ]
+                ),
+                false
             )
         )
     }
@@ -300,12 +393,16 @@ mod tests {
         let actual = target.to_condition().unwrap();
         assert_eq!(
             actual,
-            Condition::Operator(
-                Operator::Or,
-                vec![
-                    Condition::ExactKeyword("ＡＡＡ ＢＢＢ".into()),
-                    Condition::ExactKeyword("ＣＣＣ ＤＤＤ".into())
-                ]
+            (
+                false,
+                Condition::Operator(
+                    Operator::Or,
+                    vec![
+                        Condition::ExactKeyword("ＡＡＡ ＢＢＢ".into()),
+                        Condition::ExactKeyword("ＣＣＣ ＤＤＤ".into())
+                    ]
+                ),
+                false
             )
         )
     }
@@ -316,12 +413,16 @@ mod tests {
         let actual = target.to_condition().unwrap();
         assert_eq!(
             actual,
-            Condition::Operator(
-                Operator::Or,
-                vec![
-                    Condition::Negative(Box::new(Condition::Keyword("ＡＡＡ".into()))),
-                    Condition::Negative(Box::new(Condition::Keyword("ＢＢＢ".into())))
-                ]
+            (
+                false,
+                Condition::Operator(
+                    Operator::Or,
+                    vec![
+                        Condition::Negative(Box::new(Condition::Keyword("ＡＡＡ".into()))),
+                        Condition::Negative(Box::new(Condition::Keyword("ＢＢＢ".into())))
+                    ]
+                ),
+                false
             )
         )
     }
@@ -332,12 +433,20 @@ mod tests {
         let actual = target.to_condition().unwrap();
         assert_eq!(
             actual,
-            Condition::Operator(
-                Operator::Or,
-                vec![
-                    Condition::Negative(Box::new(Condition::ExactKeyword("ＡＡＡ ＢＢＢ".into()))),
-                    Condition::Negative(Box::new(Condition::ExactKeyword("ＣＣＣ ＤＤＤ".into())))
-                ]
+            (
+                false,
+                Condition::Operator(
+                    Operator::Or,
+                    vec![
+                        Condition::Negative(Box::new(Condition::ExactKeyword(
+                            "ＡＡＡ ＢＢＢ".into()
+                        ))),
+                        Condition::Negative(Box::new(Condition::ExactKeyword(
+                            "ＣＣＣ ＤＤＤ".into()
+                        )))
+                    ]
+                ),
+                false
             )
         )
     }
@@ -348,12 +457,16 @@ mod tests {
         let actual = target.to_condition().unwrap();
         assert_eq!(
             actual,
-            Condition::Operator(
-                Operator::And,
-                vec![
-                    Condition::Keyword("ＡＡＡ".into()),
-                    Condition::Keyword("ＢＢＢ".into())
-                ]
+            (
+                false,
+                Condition::Operator(
+                    Operator::And,
+                    vec![
+                        Condition::Keyword("ＡＡＡ".into()),
+                        Condition::Keyword("ＢＢＢ".into())
+                    ]
+                ),
+                false
             )
         )
     }
@@ -364,12 +477,16 @@ mod tests {
         let actual = target.to_condition().unwrap();
         assert_eq!(
             actual,
-            Condition::Operator(
-                Operator::And,
-                vec![
-                    Condition::ExactKeyword("ＡＡＡ ＢＢＢ".into()),
-                    Condition::ExactKeyword("ＣＣＣ ＤＤＤ".into())
-                ]
+            (
+                false,
+                Condition::Operator(
+                    Operator::And,
+                    vec![
+                        Condition::ExactKeyword("ＡＡＡ ＢＢＢ".into()),
+                        Condition::ExactKeyword("ＣＣＣ ＤＤＤ".into())
+                    ]
+                ),
+                false
             )
         )
     }
@@ -380,12 +497,16 @@ mod tests {
         let actual = target.to_condition().unwrap();
         assert_eq!(
             actual,
-            Condition::Operator(
-                Operator::And,
-                vec![
-                    Condition::Negative(Box::new(Condition::Keyword("ＡＡＡ".into()))),
-                    Condition::Negative(Box::new(Condition::Keyword("ＢＢＢ".into())))
-                ]
+            (
+                false,
+                Condition::Operator(
+                    Operator::And,
+                    vec![
+                        Condition::Negative(Box::new(Condition::Keyword("ＡＡＡ".into()))),
+                        Condition::Negative(Box::new(Condition::Keyword("ＢＢＢ".into())))
+                    ]
+                ),
+                false
             )
         )
     }
@@ -396,12 +517,20 @@ mod tests {
         let actual = target.to_condition().unwrap();
         assert_eq!(
             actual,
-            Condition::Operator(
-                Operator::And,
-                vec![
-                    Condition::Negative(Box::new(Condition::ExactKeyword("ＡＡＡ ＢＢＢ".into()))),
-                    Condition::Negative(Box::new(Condition::ExactKeyword("ＣＣＣ ＤＤＤ".into())))
-                ]
+            (
+                false,
+                Condition::Operator(
+                    Operator::And,
+                    vec![
+                        Condition::Negative(Box::new(Condition::ExactKeyword(
+                            "ＡＡＡ ＢＢＢ".into()
+                        ))),
+                        Condition::Negative(Box::new(Condition::ExactKeyword(
+                            "ＣＣＣ ＤＤＤ".into()
+                        )))
+                    ]
+                ),
+                false
             )
         )
     }
@@ -414,33 +543,37 @@ mod tests {
         let actual = target.to_condition().unwrap();
         assert_eq!(
             actual,
-            Condition::Operator(
-                Operator::Or,
-                vec![
-                    Condition::Operator(
-                        Operator::And,
-                        vec![
-                            Condition::Keyword("ＡＡＡ".into()),
-                            Condition::Keyword("ＢＢＢ".into())
-                        ]
-                    ),
-                    Condition::Operator(
-                        Operator::And,
-                        vec![
-                            Condition::Keyword("ＣＣＣ".into()),
-                            Condition::Keyword("ＤＤＤ".into()),
-                            Condition::Keyword("ＥＥＥ".into())
-                        ]
-                    ),
-                    Condition::Keyword("ＦＦＦ".into()),
-                    Condition::Operator(
-                        Operator::And,
-                        vec![
-                            Condition::Keyword("ＧＧＧ".into()),
-                            Condition::Keyword("ＨＨＨ".into())
-                        ]
-                    ),
-                ]
+            (
+                false,
+                Condition::Operator(
+                    Operator::Or,
+                    vec![
+                        Condition::Operator(
+                            Operator::And,
+                            vec![
+                                Condition::Keyword("ＡＡＡ".into()),
+                                Condition::Keyword("ＢＢＢ".into())
+                            ]
+                        ),
+                        Condition::Operator(
+                            Operator::And,
+                            vec![
+                                Condition::Keyword("ＣＣＣ".into()),
+                                Condition::Keyword("ＤＤＤ".into()),
+                                Condition::Keyword("ＥＥＥ".into())
+                            ]
+                        ),
+                        Condition::Keyword("ＦＦＦ".into()),
+                        Condition::Operator(
+                            Operator::And,
+                            vec![
+                                Condition::Keyword("ＧＧＧ".into()),
+                                Condition::Keyword("ＨＨＨ".into())
+                            ]
+                        ),
+                    ]
+                ),
+                false
             )
         )
     }
@@ -451,34 +584,38 @@ mod tests {
         let actual = target.to_condition().unwrap();
         assert_eq!(
             actual,
-            Condition::Operator(
-                Operator::Or,
-                vec![
-                    Condition::Operator(
-                        Operator::And,
-                        vec![
-                            Condition::Keyword("ＡＡＡ".into()),
-                            Condition::Negative(Box::new(Condition::Keyword("ＢＢＢ".into()))),
-                            Condition::Keyword("ＣorＣ".into()),
-                            Condition::Keyword("ｃｃｃ".into()),
-                        ]
-                    ),
-                    Condition::Operator(
-                        Operator::And,
-                        vec![
-                            Condition::ExactKeyword("c1 and c2".into()),
-                            Condition::Negative(Box::new(Condition::ExactKeyword(
-                                "c3 or c4".into()
-                            ))),
-                            Condition::Keyword("ＤandＤ".into()),
-                            Condition::ExactKeyword(" ＥＥＥ ＡNＤ ＦＦＦ ".into()),
-                            Condition::Negative(Box::new(Condition::ExactKeyword(
-                                " ＧＧＧ  oＲ  ＨＨＨ ".into()
-                            )))
-                        ]
-                    ),
-                    Condition::Keyword("ＩＩＩ".into()),
-                ]
+            (
+                false,
+                Condition::Operator(
+                    Operator::Or,
+                    vec![
+                        Condition::Operator(
+                            Operator::And,
+                            vec![
+                                Condition::Keyword("ＡＡＡ".into()),
+                                Condition::Negative(Box::new(Condition::Keyword("ＢＢＢ".into()))),
+                                Condition::Keyword("ＣorＣ".into()),
+                                Condition::Keyword("ｃｃｃ".into()),
+                            ]
+                        ),
+                        Condition::Operator(
+                            Operator::And,
+                            vec![
+                                Condition::ExactKeyword("c1 and c2".into()),
+                                Condition::Negative(Box::new(Condition::ExactKeyword(
+                                    "c3 or c4".into()
+                                ))),
+                                Condition::Keyword("ＤandＤ".into()),
+                                Condition::ExactKeyword(" ＥＥＥ ＡNＤ ＦＦＦ ".into()),
+                                Condition::Negative(Box::new(Condition::ExactKeyword(
+                                    " ＧＧＧ  oＲ  ＨＨＨ ".into()
+                                )))
+                            ]
+                        ),
+                        Condition::Keyword("ＩＩＩ".into()),
+                    ]
+                ),
+                false
             )
         )
     }
