@@ -203,6 +203,20 @@ mod tests {
     }
 
     #[test]
+    fn test_query_to_condition_only_one_exact_keyword_include_special_word() {
+        let target = Query::new("\"　ＡＡＡ　and　-ＢＢＢ　or　ＣＣＣ　\"".into());
+        let actual = target.to_condition().unwrap();
+        assert_eq!(
+            actual,
+            (
+                false,
+                Condition::ExactKeyword(" ＡＡＡ and -ＢＢＢ or ＣＣＣ ".into()),
+                false
+            )
+        )
+    }
+
+    #[test]
     fn test_query_to_condition_only_one_negative_keyword() {
         let target = Query::new("-ＡＡＡ".into());
         let actual = target.to_condition().unwrap();
@@ -277,6 +291,27 @@ mod tests {
                     vec![
                         Condition::ExactKeyword("ＡＡＡ ＢＢＢ".into()),
                         Condition::ExactKeyword("ＣＣＣ ＤＤＤ".into())
+                    ]
+                ),
+                false
+            )
+        )
+    }
+
+    #[test]
+    fn test_query_to_condition_only_one_exact_keyword_and_singular_quotation() {
+        let target = Query::new("\"ＡＡＡ　ＢＢＢ\"　\"ＣＣＣ　ＤＤＤ".into());
+        let actual = target.to_condition().unwrap();
+        assert_eq!(
+            actual,
+            (
+                false,
+                Condition::Operator(
+                    Operator::And,
+                    vec![
+                        Condition::ExactKeyword("ＡＡＡ ＢＢＢ".into()),
+                        Condition::Keyword("\"ＣＣＣ".into()),
+                        Condition::Keyword("ＤＤＤ".into())
                     ]
                 ),
                 false
