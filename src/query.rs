@@ -649,6 +649,28 @@ mod tests {
     }
 
     #[test]
+    fn test_query_to_condition_and_or_in_exact_keyword() {
+        let target = Query::new("ＡＡＡ　\"　and　ＢＢＢ　or　ＣＣＣ　and　\"　\"　or　ＤＤＤ　and　ＥＥＥ　or　\"　ＦＦＦ".into());
+        let actual = target.to_condition().unwrap();
+        assert_eq!(
+            actual,
+            (
+                false,
+                Condition::Operator(
+                    Operator::And,
+                    vec![
+                        Condition::Keyword("ＡＡＡ".into()),
+                        Condition::ExactKeyword(" and ＢＢＢ or ＣＣＣ and ".into()),
+                        Condition::ExactKeyword(" or ＤＤＤ and ＥＥＥ or ".into()),
+                        Condition::Keyword("ＦＦＦ".into()),
+                    ]
+                ),
+                false
+            )
+        )
+    }
+
+    #[test]
     fn test_query_to_condition_full_pattern() {
         let target = Query::new("　ＡＡＡ　　Ａｎｄ　-ＢＢＢ　ＡnＤ　ＣorＣ　　ｃｃｃ　Ｏr　　\"c1 and c2\"　　-\"c3 or c4\"　　ＤandＤ　anD　\"　ＥＥＥ　ＡNＤ　ＦＦＦ　\"　　ａnｄ　　-\"　ＧＧＧ　　oＲ　　ＨＨＨ　\"　　oＲ　　ＩＩＩ　and　".into());
         let actual = target.to_condition().unwrap();
