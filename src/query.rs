@@ -146,7 +146,17 @@ impl Query {
                     (_, true) => Some(Condition::Negative(Box::new(Condition::Keyword(
                         self.value_ref()[1..self.value_ref().len()].into(),
                     )))),
-                    _ => Some(Condition::Keyword(self.value())),
+                    _ => {
+                        let operation_regexes = vec![
+                            Regex::new("^(?i)[A|Ａ](?i)[N|Ｎ](?i)[D|Ｄ]$")?,
+                            Regex::new("^(?i)[O|Ｏ](?i)[R|Ｒ]$")?,
+                        ];
+                        operation_regexes
+                            .into_iter()
+                            .find(|regex| regex.is_match(self.value_ref()))
+                            .map(|_| None)
+                            .unwrap_or(Some(Condition::Keyword(self.value())))
+                    }
                 },
             },
         )
@@ -452,6 +462,26 @@ mod tests {
     }
 
     #[test]
+    fn test_query_to_condition_two_keywords_with_double_or() {
+        let target = Query::new("ＡＡＡ　or　or　ＢＢＢ".into());
+        let actual = target.to_condition().unwrap();
+        assert_eq!(
+            actual,
+            (
+                false,
+                Condition::Operator(
+                    Operator::Or,
+                    vec![
+                        Condition::Keyword("ＡＡＡ".into()),
+                        Condition::Keyword("ＢＢＢ".into())
+                    ]
+                ),
+                false
+            )
+        )
+    }
+
+    #[test]
     fn test_query_to_condition_two_keywords_with_and() {
         let target = Query::new("ＡＡＡ and　ＢＢＢ".into());
         let actual = target.to_condition().unwrap();
@@ -536,6 +566,26 @@ mod tests {
     }
 
     #[test]
+    fn test_query_to_condition_two_keywords_with_double_and() {
+        let target = Query::new("ＡＡＡ　and　and　ＢＢＢ".into());
+        let actual = target.to_condition().unwrap();
+        assert_eq!(
+            actual,
+            (
+                false,
+                Condition::Operator(
+                    Operator::And,
+                    vec![
+                        Condition::Keyword("ＡＡＡ".into()),
+                        Condition::Keyword("ＢＢＢ".into())
+                    ]
+                ),
+                false
+            )
+        )
+    }
+
+    #[test]
     fn test_query_to_condition_multi_keywords_with_or_and() {
         let target = Query::new(
             "ＡＡＡ and　ＢＢＢ or ＣＣＣ ＤＤＤ and ＥＥＥ or ＦＦＦ or ＧＧＧ ＨＨＨ".into(),
@@ -571,6 +621,26 @@ mod tests {
                                 Condition::Keyword("ＨＨＨ".into())
                             ]
                         ),
+                    ]
+                ),
+                false
+            )
+        )
+    }
+
+    #[test]
+    fn test_query_to_condition_two_keywords_with_double_and_or() {
+        let target = Query::new("ＡＡＡ　and　or　and　or　ＢＢＢ".into());
+        let actual = target.to_condition().unwrap();
+        assert_eq!(
+            actual,
+            (
+                false,
+                Condition::Operator(
+                    Operator::Or,
+                    vec![
+                        Condition::Keyword("ＡＡＡ".into()),
+                        Condition::Keyword("ＢＢＢ".into())
                     ]
                 ),
                 false
