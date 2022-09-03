@@ -711,4 +711,91 @@ mod tests {
             )
         )
     }
+
+    #[test]
+    fn test_query_to_condition_start_end_with_and() {
+        let target = Query::new("and ＡＡＡ　ＢＢＢ and".into());
+        let actual = target.to_condition().unwrap();
+        assert_eq!(
+            actual,
+            (
+                false,
+                Condition::Operator(
+                    Operator::And,
+                    vec![
+                        Condition::Keyword("ＡＡＡ".into()),
+                        Condition::Keyword("ＢＢＢ".into())
+                    ]
+                ),
+                false
+            )
+        )
+    }
+
+    #[test]
+    fn test_query_to_condition_start_end_with_and_with_space() {
+        let target = Query::new(" and ＡＡＡ　ＢＢＢ and ".into());
+        let actual = target.to_condition().unwrap();
+        assert_eq!(
+            actual,
+            (
+                false,
+                Condition::Operator(
+                    Operator::And,
+                    vec![
+                        Condition::Keyword("ＡＡＡ".into()),
+                        Condition::Keyword("ＢＢＢ".into())
+                    ]
+                ),
+                false
+            )
+        )
+    }
+
+    #[test]
+    fn test_query_to_condition_start_end_with_or() {
+        let target = Query::new("or ＡＡＡ　ＢＢＢ or".into());
+        let actual = target.to_condition().unwrap();
+        assert_eq!(
+            actual,
+            (
+                false,
+                Condition::Operator(
+                    Operator::And,
+                    vec![
+                        Condition::Keyword("ＡＡＡ".into()),
+                        Condition::Keyword("ＢＢＢ".into())
+                    ]
+                ),
+                false
+            )
+        )
+    }
+
+    #[test]
+    fn test_query_to_condition_start_end_with_or_with_space() {
+        let target = Query::new(" or ＡＡＡ　ＢＢＢ or ".into());
+        let actual = target.to_condition().unwrap();
+        assert_eq!(
+            actual,
+            (
+                true,
+                Condition::Operator(
+                    Operator::And,
+                    vec![
+                        Condition::Keyword("ＡＡＡ".into()),
+                        Condition::Keyword("ＢＢＢ".into())
+                    ]
+                ),
+                true
+            )
+        )
+    }
+
+    #[test]
+    fn test_query_to_condition_start_end_with_or_with_space_include_one_keyword() {
+        let target = Query::new(" or ＡＡＡ or ".into());
+        let actual = target.to_condition().unwrap();
+        assert_eq!(actual, (true, Condition::Keyword("ＡＡＡ".into()), true))
+    }
 }
