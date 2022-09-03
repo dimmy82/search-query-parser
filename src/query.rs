@@ -44,42 +44,39 @@ impl Query {
         );
 
         let mut or_conditions = Vec::<Condition>::new();
-        let (mut is_start_with_or, mut is_end_with_or) = (false, false);
+        let (is_start_with_or, is_end_with_or) = match (
+            Regex::new("^ *(?i)[O|Ｏ](?i)[R|Ｒ] *$")?.is_match(query.value_ref()),
+            Regex::new("^ *(?i)[O|Ｏ](?i)[R|Ｒ] +")?.is_match(query.value_ref()),
+            Regex::new(" +(?i)[O|Ｏ](?i)[R|Ｒ] *$")?.is_match(query.value_ref()),
+        ) {
+            (true, _, _) => (true, true),
+            (false, is_start_with_or, is_end_with_or) => (is_start_with_or, is_end_with_or),
+        };
         let or_queries = Regex::new(" +(?i)[O|Ｏ](?i)[R|Ｒ] +")?
             .split(query.value_ref())
             .into_iter()
             .collect::<Vec<&str>>();
         let and_regex = Regex::new(" +")?;
-        let or_queries_last_index = or_queries.len() - 1;
-        or_queries.into_iter().enumerate().for_each(|(i, q)| {
+        or_queries.into_iter().for_each(|q| {
             let query = Query::new(q.into());
-            match (query.is_not_blank(), i) {
-                (false, index) => {
-                    if index == 0 && or_queries_last_index > 0 {
-                        is_start_with_or = true
-                    } else if index == or_queries_last_index && or_queries_last_index > 0 {
-                        is_end_with_or = true
-                    }
-                }
-                (true, _) => {
-                    let and_conditions = and_regex
-                        .split(query.value_ref())
-                        .into_iter()
-                        .filter_map(|k| {
-                            let q = Query::new(k.into());
-                            match q.is_not_blank() {
-                                true => Some(q),
-                                false => None,
-                            }
-                        })
-                        .filter_map(|keyword| {
-                            keyword
-                                .keyword_condition(&negative_exact_keywords, &exact_keywords)
-                                .unwrap_or(None)
-                        })
-                        .collect::<Vec<Condition>>();
-                    or_conditions.push(Condition::Operator(Operator::And, and_conditions));
-                }
+            if query.is_not_blank() {
+                let and_conditions = and_regex
+                    .split(query.value_ref())
+                    .into_iter()
+                    .filter_map(|k| {
+                        let q = Query::new(k.into());
+                        match q.is_not_blank() {
+                            true => Some(q),
+                            false => None,
+                        }
+                    })
+                    .filter_map(|keyword| {
+                        keyword
+                            .keyword_condition(&negative_exact_keywords, &exact_keywords)
+                            .unwrap_or(None)
+                    })
+                    .collect::<Vec<Condition>>();
+                or_conditions.push(Condition::Operator(Operator::And, and_conditions));
             }
         });
 
@@ -759,7 +756,7 @@ mod tests {
         assert_eq!(
             actual,
             (
-                false,
+                true,
                 Condition::Operator(
                     Operator::And,
                     vec![
@@ -767,7 +764,7 @@ mod tests {
                         Condition::Keyword("ＢＢＢ".into())
                     ]
                 ),
-                false
+                true
             )
         )
     }
@@ -797,5 +794,19 @@ mod tests {
         let target = Query::new(" or ＡＡＡ or ".into());
         let actual = target.to_condition().unwrap();
         assert_eq!(actual, (true, Condition::Keyword("ＡＡＡ".into()), true))
+    }
+
+    #[test]
+    fn test_query_to_condition_only_or() {
+        let target = Query::new("or".into());
+        let actual = target.to_condition().unwrap();
+        assert_eq!(actual, (true, Condition::None, true))
+    }
+
+    #[test]
+    fn test_query_to_condition_only_or_with_space() {
+        let target = Query::new(" or ".into());
+        let actual = target.to_condition().unwrap();
+        assert_eq!(actual, (true, Condition::None, true))
     }
 }
