@@ -1,6 +1,6 @@
 use crate::condition::Condition;
 use crate::query::Query;
-use crate::{filter_not_blank_query, match_to_number};
+use crate::{filter_not_blank_query, match_to_number, Operator};
 use eyre::Result;
 use regex::{Captures, Regex};
 
@@ -83,19 +83,74 @@ impl LayeredQueries {
         Ok(Self(layered_queries))
     }
 
-    // k1 or (k2 and (-k3 or -k4))
     pub(crate) fn to_condition(self) -> Result<Condition> {
-        let _layered_query_count = self.0.iter().count();
-        self.0
-            .into_iter()
-            .enumerate()
-            .for_each(|(_index, layered_query)| match layered_query {
+        let mut query_string = String::new();
+        let mut conditions = Vec::<Condition>::new();
+
+        for layered_query in self.0 {
+            match layered_query {
                 LayeredQuery::Query(query) => {
-                    let _ = query.to_condition();
+                    let (is_start_with_or, condition, is_end_with_or) = query.to_condition()?;
+                    query_string.push_str(
+                        format!(
+                            " {} {} {} ",
+                            if is_start_with_or { "or" } else { "and" },
+                            conditions.len(),
+                            if is_end_with_or { "or" } else { "and" }
+                        )
+                        .as_str(),
+                    );
+                    conditions.push(condition);
                 }
-                _ => {}
-            });
-        unimplemented!()
+                LayeredQuery::Bracket(layered_queries) => {
+                    let condition = layered_queries.to_condition()?;
+                    query_string.push_str(format!(" {} ", conditions.len()).as_str());
+                    conditions.push(condition);
+                }
+                LayeredQuery::NegativeBracket(layered_queries) => {
+                    let condition = layered_queries.to_condition()?;
+                    query_string.push_str(format!(" {} ", conditions.len()).as_str());
+                    conditions.push(Condition::Negative(Box::new(condition)));
+                }
+            }
+        }
+
+        let query = Query::new(query_string);
+        let (_, condition, _) = query.to_condition()?;
+        let condition = match condition {
+            Condition::Keyword(index) => Self::get_condition(index, &conditions)?,
+            Condition::Operator(operator, layer1_conditions) => {
+                let mut real_layer1_conditions = Vec::<Condition>::new();
+                for condition in layer1_conditions {
+                    real_layer1_conditions.push(match condition {
+                        Condition::Keyword(index) => Self::get_condition(index, &conditions)?,
+                        Condition::Operator(Operator::And, layer2_conditions) => {
+                            let mut real_layer2_conditions = Vec::<Condition>::new();
+                            for condition in layer2_conditions {
+                                real_layer2_conditions.push(match condition {
+                                    Condition::Keyword(index) => {
+                                        Self::get_condition(index, &conditions)?
+                                    }
+                                    _ => Condition::None,
+                                })
+                            }
+                            Condition::Operator(Operator::And, real_layer2_conditions)
+                        }
+                        _ => Condition::None,
+                    })
+                }
+                Condition::Operator(operator, real_layer1_conditions)
+            }
+            _ => Condition::None,
+        };
+        Ok(condition.simplify())
+    }
+
+    fn get_condition(index: String, conditions: &Vec<Condition>) -> Result<Condition> {
+        Ok(conditions
+            .get(index.parse::<usize>()?)
+            .map(|condition: &Condition| condition.clone())
+            .unwrap_or(Condition::None))
     }
 }
 
@@ -429,61 +484,87 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_layered_queries_parse_to_condition() {
-        let query =
-            Query::new("　ＡＡＡ　（”１１１　ＣＣＣ”　（-（　ＤＤＤ　エエエ　）　ＦＦＦ）　ＧＧＧ　（ＨＨＨ　-”あああ　いいい”　ううう））　”　ＪＪＪ　”　-（ＫＫＫ　（　）　ＬＬＬ）　　（ＭＭＭ）　２２２　".into());
-        assert_eq!(
-            LayeredQueries::parse(query)
-                .unwrap()
-                .to_condition()
-                .unwrap(),
-            Condition::Operator(
-                Operator::Or,
-                vec![
-                    Condition::Keyword("ＡＡＡ".into()),
-                    Condition::Operator(
-                        Operator::Or,
-                        vec![
-                            Condition::ExactKeyword("１１１ ＣＣＣ".into()),
-                            Condition::Operator(
-                                Operator::Or,
-                                vec![
-                                    Condition::Negative(Box::new(Condition::Operator(
-                                        Operator::Or,
-                                        vec![
-                                            Condition::Keyword("ＤＤＤ".into()),
-                                            Condition::Keyword("エエエ".into()),
-                                        ]
-                                    ))),
-                                    Condition::Keyword("ＦＦＦ".into()),
-                                ]
-                            ),
-                            Condition::Keyword("ＧＧＧ".into()),
-                            Condition::Operator(
-                                Operator::Or,
-                                vec![
-                                    Condition::Keyword("ＨＨＨ".into()),
-                                    Condition::Negative(Box::new(Condition::ExactKeyword(
-                                        "あああ いいい".into()
-                                    ))),
-                                    Condition::Keyword("ううう".into()),
-                                ]
-                            ),
-                        ]
-                    ),
-                    Condition::ExactKeyword(" ＪＪＪ ".into()),
-                    Condition::Negative(Box::new(Condition::Operator(
-                        Operator::Or,
-                        vec![
-                            Condition::Keyword("ＫＫＫ".into()),
-                            Condition::Keyword("ＬＬＬ".into()),
-                        ]
-                    ))),
-                    Condition::Operator(Operator::Or, vec![Condition::Keyword("ＭＭＭ".into()),]),
-                    Condition::Keyword("２２２".into()),
-                ]
+    mod test_layered_queries_parse_to_condition {
+        use super::*;
+
+        #[test]
+        fn test_layered_queries_parse_to_condition_full_pattern() {
+            let query =
+                Query::new("　ＡＡＡ　（”１１１　ＣＣＣ”　or（-（　ＤＤＤ　or　エエエ　）and　ＦＦＦ）or　ＧＧＧ　（ＨＨＨ　or　-”あああ　いいい”　ううう））　”　ＪＪＪ　”　or　-（ＫＫＫ　and　（　）　or　ＬＬＬ）　　（ＭＭＭ）or　２２２　".into());
+            assert_eq!(
+                LayeredQueries::parse(query)
+                    .unwrap()
+                    .to_condition()
+                    .unwrap(),
+                Condition::Operator(
+                    Operator::Or,
+                    vec![
+                        Condition::Operator(
+                            Operator::And,
+                            vec![
+                                Condition::Keyword("ＡＡＡ".into()),
+                                Condition::Operator(
+                                    Operator::Or,
+                                    vec![
+                                        Condition::ExactKeyword("１１１ ＣＣＣ".into()),
+                                        Condition::Operator(
+                                            Operator::And,
+                                            vec![
+                                                Condition::Negative(Box::new(Condition::Operator(
+                                                    Operator::Or,
+                                                    vec![
+                                                        Condition::Keyword("ＤＤＤ".into()),
+                                                        Condition::Keyword("エエエ".into()),
+                                                    ]
+                                                ))),
+                                                Condition::Keyword("ＦＦＦ".into()),
+                                            ]
+                                        ),
+                                        Condition::Operator(
+                                            Operator::And,
+                                            vec![
+                                                Condition::Keyword("ＧＧＧ".into()),
+                                                Condition::Operator(
+                                                    Operator::Or,
+                                                    vec![
+                                                        Condition::Keyword("ＨＨＨ".into()),
+                                                        Condition::Operator(
+                                                            Operator::And,
+                                                            vec![
+                                                                Condition::Negative(Box::new(
+                                                                    Condition::ExactKeyword(
+                                                                        "あああ いいい".into()
+                                                                    )
+                                                                )),
+                                                                Condition::Keyword("ううう".into()),
+                                                            ]
+                                                        )
+                                                    ]
+                                                )
+                                            ]
+                                        )
+                                    ]
+                                ),
+                                Condition::ExactKeyword(" ＪＪＪ ".into())
+                            ]
+                        ),
+                        Condition::Operator(
+                            Operator::And,
+                            vec![
+                                Condition::Negative(Box::new(Condition::Operator(
+                                    Operator::Or,
+                                    vec![
+                                        Condition::Keyword("ＫＫＫ".into()),
+                                        Condition::Keyword("ＬＬＬ".into()),
+                                    ]
+                                ))),
+                                Condition::Keyword("ＭＭＭ".into()),
+                            ]
+                        ),
+                        Condition::Keyword("２２２".into())
+                    ]
+                )
             )
-        )
+        }
     }
 }
