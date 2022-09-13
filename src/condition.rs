@@ -49,28 +49,32 @@ impl Condition {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_simplify_none() {
-        assert_eq!(Condition::None.simplify(), Condition::None)
+    mod test_condition_simplify {
+        use super::*;
+
+        #[test]
+        fn test_simplify_none() {
+            assert_eq!(Condition::None.simplify(), Condition::None)
+        }
+
+        #[test]
+        fn test_simplify_keyword() {
+            assert_eq!(
+                Condition::Keyword("keyword".into()).simplify(),
+                Condition::Keyword("keyword".into())
+            )
+        }
+
+        #[test]
+        fn test_simplify_exact_keyword() {
+            assert_eq!(
+                Condition::ExactKeyword("exact keyword".into()).simplify(),
+                Condition::ExactKeyword("exact keyword".into())
+            )
+        }
     }
 
-    #[test]
-    fn test_simplify_keyword() {
-        assert_eq!(
-            Condition::Keyword("keyword".into()).simplify(),
-            Condition::Keyword("keyword".into())
-        )
-    }
-
-    #[test]
-    fn test_simplify_exact_keyword() {
-        assert_eq!(
-            Condition::ExactKeyword("exact keyword".into()).simplify(),
-            Condition::ExactKeyword("exact keyword".into())
-        )
-    }
-
-    mod test_simplify_negative {
+    mod test_condition_simplify_negative {
         use super::*;
 
         #[test]
@@ -171,7 +175,7 @@ mod tests {
         }
     }
 
-    mod test_simplify_operator_and {
+    mod test_condition_simplify_operator_and {
         use super::*;
 
         #[test]
@@ -304,7 +308,7 @@ mod tests {
         }
     }
 
-    mod test_simplify_operator_or {
+    mod test_condition_simplify_operator_or {
         use super::*;
 
         #[test]
