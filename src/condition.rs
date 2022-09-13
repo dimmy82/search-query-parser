@@ -1,4 +1,4 @@
-use crate::condition::Condition::{Negative, Operator};
+use crate::condition::Condition::Negative;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub(crate) enum Condition {
@@ -6,7 +6,13 @@ pub(crate) enum Condition {
     Keyword(String),
     ExactKeyword(String),
     Negative(Box<Condition>),
-    Operator(crate::Operator, Vec<Condition>),
+    Operator(Operator, Vec<Condition>),
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub(crate) enum Operator {
+    And,
+    Or,
 }
 
 impl Condition {
@@ -17,7 +23,7 @@ impl Condition {
                 Negative(condition) => condition.as_ref().clone(),
                 condition => Negative(Box::new(condition)),
             },
-            Operator(operator, conditions) => {
+            Condition::Operator(operator, conditions) => {
                 let conditions = conditions
                     .into_iter()
                     .filter_map(|condition| match condition.simplify() {
@@ -31,7 +37,7 @@ impl Condition {
                         .get(0)
                         .map(|condition| condition.clone())
                         .unwrap_or(Condition::None),
-                    _ => Operator(operator, conditions),
+                    _ => Condition::Operator(operator, conditions),
                 }
             }
             _ => self,
@@ -66,7 +72,6 @@ mod tests {
 
     mod test_simplify_negative {
         use super::*;
-        use crate::Operator;
 
         #[test]
         fn test_simplify_negative_none() {
@@ -168,7 +173,6 @@ mod tests {
 
     mod test_simplify_operator_and {
         use super::*;
-        use crate::Operator;
 
         #[test]
         fn test_simplify_operator_and_empty() {
@@ -302,7 +306,6 @@ mod tests {
 
     mod test_simplify_operator_or {
         use super::*;
-        use crate::Operator;
 
         #[test]
         fn test_simplify_operator_or_empty() {

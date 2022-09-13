@@ -6,24 +6,18 @@ mod condition;
 mod layered_query;
 mod query;
 
-fn main() {
+pub fn main() {
     let _result = LayeredQueries::parse(Query::new("search".into()))
         .map(|layered_queries| layered_queries.to_condition());
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub(crate) enum Operator {
-    And,
-    Or,
-}
-
-pub(crate) fn filter_not_blank_query(regex_match: Option<Match>) -> Option<Query> {
+pub(crate) fn regex_match_not_blank_query(regex_match: Option<Match>) -> Option<Query> {
     regex_match
         .map(|m| Query::new(m.as_str().into()))
         .filter(|q| q.is_not_blank())
 }
 
-pub(crate) fn match_to_number<F: FnOnce(usize) -> Option<R>, R>(
+pub(crate) fn regex_match_number<F: FnOnce(usize) -> Option<R>, R>(
     regex_match: Option<Match>, call_back: F,
 ) -> Option<R> {
     regex_match

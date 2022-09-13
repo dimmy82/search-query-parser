@@ -1,5 +1,5 @@
-use crate::condition::Condition;
-use crate::{filter_not_blank_query, match_to_number, Operator};
+use crate::condition::{Condition, Operator};
+use crate::{regex_match_not_blank_query, regex_match_number};
 use eyre::Result;
 use regex::{Captures, Regex};
 
@@ -104,7 +104,7 @@ impl Query {
             query = Query::new(
                 regex
                     .replace_all(query.value_ref(), |captures: &Captures| {
-                        match filter_not_blank_query(captures.get(1)) {
+                        match regex_match_not_blank_query(captures.get(1)) {
                             Some(q) => {
                                 vec.push(q);
                                 format!(" ({}:{}) ", prefix, vec.len())
@@ -126,14 +126,14 @@ impl Query {
                 Regex::new(r"^\(NEK:(\d)\)$")?.captures(self.value_ref()),
                 Regex::new(r"^\(EK:(\d)\)$")?.captures(self.value_ref()),
             ) {
-                (Some(nek), _) => match_to_number(nek.get(1), |i| {
+                (Some(nek), _) => regex_match_number(nek.get(1), |i| {
                     negative_exact_keywords.get(i - 1).map(|nek| {
                         Condition::Negative(Box::new(Condition::ExactKeyword(
                             nek.value_ref().to_string(),
                         )))
                     })
                 }),
-                (_, Some(ek)) => match_to_number(ek.get(1), |i| {
+                (_, Some(ek)) => regex_match_number(ek.get(1), |i| {
                     exact_keywords
                         .get(i - 1)
                         .map(|ek| Condition::ExactKeyword(ek.value_ref().to_string()))

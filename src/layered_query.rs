@@ -1,6 +1,6 @@
-use crate::condition::Condition;
+use crate::condition::{Condition, Operator};
 use crate::query::Query;
-use crate::{filter_not_blank_query, match_to_number, Operator};
+use crate::{regex_match_not_blank_query, regex_match_number};
 use eyre::Result;
 use regex::{Captures, Regex};
 
@@ -29,16 +29,15 @@ impl LayeredQueries {
         let regex_bracket = Regex::new(r"\(([^\(\)]*)\)")?;
         let innermost_bracket_removed_query = Query::new(
             regex_bracket
-                .replace_all(
-                    query.value_ref(),
-                    |captures: &Captures| match filter_not_blank_query(captures.get(1)) {
+                .replace_all(query.value_ref(), |captures: &Captures| {
+                    match regex_match_not_blank_query(captures.get(1)) {
                         Some(q) => {
                             bracket_queries.push(q);
                             format!("（{}）", bracket_queries.len())
                         }
                         None => String::from(""),
-                    },
-                )
+                    }
+                })
                 .into(),
         );
         match query == innermost_bracket_removed_query {
@@ -53,7 +52,7 @@ impl LayeredQueries {
         let the_last_query_after_all_brackets = regex_layered_by_bracket
             .replace_all(query.value_ref(), |captures: &Captures| {
                 let mut is_negative_bracket = false;
-                filter_not_blank_query(captures.get(1)).map(|mut q| {
+                regex_match_not_blank_query(captures.get(1)).map(|mut q| {
                     if q.value_ref().ends_with("-") {
                         is_negative_bracket = true;
                         q = Query::new(String::from(&q.value_ref()[0..q.value_ref().len() - 1]))
@@ -62,7 +61,7 @@ impl LayeredQueries {
                         layered_queries.push(LayeredQuery::Query(q))
                     }
                 });
-                match_to_number(captures.get(2), |i| {
+                regex_match_number(captures.get(2), |i| {
                     bracket_queries.get(i - 1).map(|q| {
                         Self::combine_layered_query(q.clone(), bracket_queries).map(|v| {
                             layered_queries.push(if is_negative_bracket {
@@ -158,7 +157,6 @@ impl LayeredQueries {
 mod tests {
     use super::*;
     use crate::query::Query;
-    use crate::Operator;
 
     impl Query {
         fn new_with_normalize(value: String) -> Self {
