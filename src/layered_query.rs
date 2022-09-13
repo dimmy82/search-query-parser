@@ -486,6 +486,78 @@ mod tests {
         use super::*;
 
         #[test]
+        fn test_layered_queries_parse_to_condition_empty_string() {
+            let query = Query::new("".into());
+            assert_eq!(
+                LayeredQueries::parse(query)
+                    .unwrap()
+                    .to_condition()
+                    .unwrap(),
+                Condition::None
+            )
+        }
+
+        #[test]
+        fn test_layered_queries_parse_to_condition_blank_string() {
+            let query = Query::new(" 　 ".into());
+            assert_eq!(
+                LayeredQueries::parse(query)
+                    .unwrap()
+                    .to_condition()
+                    .unwrap(),
+                Condition::None
+            )
+        }
+
+        #[test]
+        fn test_layered_queries_parse_to_condition_one_keyword() {
+            let query = Query::new(" 検索 ".into());
+            assert_eq!(
+                LayeredQueries::parse(query)
+                    .unwrap()
+                    .to_condition()
+                    .unwrap(),
+                Condition::Keyword("検索".into())
+            )
+        }
+
+        #[test]
+        fn test_layered_queries_parse_to_condition_one_exact_keyword() {
+            let query = Query::new(" \"検索\" ".into());
+            assert_eq!(
+                LayeredQueries::parse(query)
+                    .unwrap()
+                    .to_condition()
+                    .unwrap(),
+                Condition::ExactKeyword("検索".into())
+            )
+        }
+
+        #[test]
+        fn test_layered_queries_parse_to_condition_one_negative_keyword() {
+            let query = Query::new(" -検索 ".into());
+            assert_eq!(
+                LayeredQueries::parse(query)
+                    .unwrap()
+                    .to_condition()
+                    .unwrap(),
+                Condition::Negative(Box::new(Condition::Keyword("検索".into())))
+            )
+        }
+
+        #[test]
+        fn test_layered_queries_parse_to_condition_one_negative_exact_keyword() {
+            let query = Query::new(" -\"検索\" ".into());
+            assert_eq!(
+                LayeredQueries::parse(query)
+                    .unwrap()
+                    .to_condition()
+                    .unwrap(),
+                Condition::Negative(Box::new(Condition::ExactKeyword("検索".into())))
+            )
+        }
+
+        #[test]
         fn test_layered_queries_parse_to_condition_full_pattern() {
             let query =
                 Query::new("　ＡＡＡ　（”１１１　ＣＣＣ”　or（-（　ＤＤＤ　or　エエエ　）and　ＦＦＦ）or　ＧＧＧ　（ＨＨＨ　or　-”あああ　いいい”　ううう））　”　ＪＪＪ　”　or　-（ＫＫＫ　and　（　）　or　ＬＬＬ）　　（ＭＭＭ）or　２２２　".into());
