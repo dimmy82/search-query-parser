@@ -47,7 +47,7 @@ impl LayeredQueries {
     }
 
     fn combine_layered_query(query: Query, bracket_queries: &Vec<Query>) -> Result<LayeredQueries> {
-        let regex_layered_by_bracket = Regex::new(r"([^（）]*)（(\d)）")?;
+        let regex_layered_by_bracket = Regex::new(r"([^（）]*)（(\d+)）")?;
         let mut layered_queries = Vec::<LayeredQuery>::new();
         let the_last_query_after_all_brackets = regex_layered_by_bracket
             .replace_all(query.value_ref(), |captures: &Captures| {
@@ -226,7 +226,7 @@ mod tests {
         }
 
         #[test]
-        fn test_parse_with_multi_brackets_in_same_layer() {
+        fn test_parse_with_multi_brackets() {
             let query = Query::new(
                 "（　ＡＡＡ　”１１１　ＣＣＣ”）　（-ＤＤＤ　or　エエエ）　and　（ＦＦＦ　-”あああ　いいい”）"
                     .into(),
@@ -249,7 +249,7 @@ mod tests {
         }
 
         #[test]
-        fn test_parse_with_multi_brackets_or_negative_brackets_in_same_layer() {
+        fn test_parse_with_multi_brackets_or_negative_brackets() {
             let query = Query::new(
                 "（　ＡＡＡ　”１１１　ＣＣＣ”）-（ＤＤＤ　or　エエエ）　and　（ＦＦＦ　-”あああ　いいい”）"
                     .into(),
@@ -272,7 +272,7 @@ mod tests {
         }
 
         #[test]
-        fn test_parse_with_multi_brackets_in_layers() {
+        fn test_parse_with_multi_nested_brackets() {
             let query = Query::new(
                 "　ＡＡＡ　（”１１１　ＣＣＣ”　or　（（エエエ　or　ＦＦＦ　-”あああ　いいい”）　and　-ＤＤＤ））　and　ＥＥＥ"
                     .into(),
@@ -300,7 +300,7 @@ mod tests {
         }
 
         #[test]
-        fn test_parse_with_multi_brackets_or_negative_brackets_in_layers() {
+        fn test_parse_with_multi_nested_brackets_or_nested_negative_brackets() {
             let query = Query::new(
                 "　ＡＡＡ　-（”１１１　ＣＣＣ”　or　（-（エエエ　or　ＦＦＦ　-”あああ　いいい”）　and　（-ＤＤＤ or -ＥＥＥ）））　and　ＦＦＦ"
                     .into(),
@@ -554,6 +554,298 @@ mod tests {
                     .to_condition()
                     .unwrap(),
                 Condition::Negative(Box::new(Condition::ExactKeyword("検索".into())))
+            )
+        }
+
+        #[test]
+        fn test_layered_queries_parse_to_condition_mutlti_keywords_concat_with_space() {
+            let query = Query::new(" 検索１ -検索２ \"検索３\" -\"検索４\" ".into());
+            assert_eq!(
+                LayeredQueries::parse(query)
+                    .unwrap()
+                    .to_condition()
+                    .unwrap(),
+                Condition::Operator(
+                    Operator::And,
+                    vec![
+                        Condition::Keyword("検索１".into()),
+                        Condition::Negative(Box::new(Condition::Keyword("検索２".into()))),
+                        Condition::ExactKeyword("検索３".into()),
+                        Condition::Negative(Box::new(Condition::ExactKeyword("検索４".into())))
+                    ]
+                )
+            )
+        }
+
+        #[test]
+        fn test_layered_queries_parse_to_condition_mutlti_keywords_concat_with_and() {
+            let query = Query::new(" 検索１ and -検索２ and \"検索３\" and -\"検索４\" ".into());
+            assert_eq!(
+                LayeredQueries::parse(query)
+                    .unwrap()
+                    .to_condition()
+                    .unwrap(),
+                Condition::Operator(
+                    Operator::And,
+                    vec![
+                        Condition::Keyword("検索１".into()),
+                        Condition::Negative(Box::new(Condition::Keyword("検索２".into()))),
+                        Condition::ExactKeyword("検索３".into()),
+                        Condition::Negative(Box::new(Condition::ExactKeyword("検索４".into())))
+                    ]
+                )
+            )
+        }
+
+        #[test]
+        fn test_layered_queries_parse_to_condition_mutlti_keywords_concat_with_or() {
+            let query = Query::new(" 検索１ or -検索２ or \"検索３\" or -\"検索４\" ".into());
+            assert_eq!(
+                LayeredQueries::parse(query)
+                    .unwrap()
+                    .to_condition()
+                    .unwrap(),
+                Condition::Operator(
+                    Operator::Or,
+                    vec![
+                        Condition::Keyword("検索１".into()),
+                        Condition::Negative(Box::new(Condition::Keyword("検索２".into()))),
+                        Condition::ExactKeyword("検索３".into()),
+                        Condition::Negative(Box::new(Condition::ExactKeyword("検索４".into())))
+                    ]
+                )
+            )
+        }
+
+        #[test]
+        fn test_layered_queries_parse_to_condition_mutlti_keywords_concat_with_space_or_and() {
+            let query = Query::new(" 検索１ -検索２ or \"検索３\" and -\"検索４\" ".into());
+            assert_eq!(
+                LayeredQueries::parse(query)
+                    .unwrap()
+                    .to_condition()
+                    .unwrap(),
+                Condition::Operator(
+                    Operator::Or,
+                    vec![
+                        Condition::Operator(
+                            Operator::And,
+                            vec![
+                                Condition::Keyword("検索１".into()),
+                                Condition::Negative(Box::new(Condition::Keyword("検索２".into()))),
+                            ]
+                        ),
+                        Condition::Operator(
+                            Operator::And,
+                            vec![
+                                Condition::ExactKeyword("検索３".into()),
+                                Condition::Negative(Box::new(Condition::ExactKeyword(
+                                    "検索４".into()
+                                )))
+                            ]
+                        )
+                    ]
+                )
+            )
+        }
+
+        #[test]
+        fn test_layered_queries_parse_to_condition_or_in_brackets() {
+            let query = Query::new(" 検索１ and (-検索２ or \"検索３\") or -\"検索４\" ".into());
+            assert_eq!(
+                LayeredQueries::parse(query)
+                    .unwrap()
+                    .to_condition()
+                    .unwrap(),
+                Condition::Operator(
+                    Operator::Or,
+                    vec![
+                        Condition::Operator(
+                            Operator::And,
+                            vec![
+                                Condition::Keyword("検索１".into()),
+                                Condition::Operator(
+                                    Operator::Or,
+                                    vec![
+                                        Condition::Negative(Box::new(Condition::Keyword(
+                                            "検索２".into()
+                                        ))),
+                                        Condition::ExactKeyword("検索３".into()),
+                                    ]
+                                ),
+                            ]
+                        ),
+                        Condition::Negative(Box::new(Condition::ExactKeyword("検索４".into())))
+                    ]
+                )
+            )
+        }
+
+        #[test]
+        fn test_layered_queries_parse_to_condition_or_in_negative_brackets() {
+            let query = Query::new(" 検索１ and -(-検索２ or \"検索３\") or -\"検索４\" ".into());
+            assert_eq!(
+                LayeredQueries::parse(query)
+                    .unwrap()
+                    .to_condition()
+                    .unwrap(),
+                Condition::Operator(
+                    Operator::Or,
+                    vec![
+                        Condition::Operator(
+                            Operator::And,
+                            vec![
+                                Condition::Keyword("検索１".into()),
+                                Condition::Negative(Box::new(Condition::Operator(
+                                    Operator::Or,
+                                    vec![
+                                        Condition::Negative(Box::new(Condition::Keyword(
+                                            "検索２".into()
+                                        ))),
+                                        Condition::ExactKeyword("検索３".into()),
+                                    ]
+                                ))),
+                            ]
+                        ),
+                        Condition::Negative(Box::new(Condition::ExactKeyword("検索４".into())))
+                    ]
+                )
+            )
+        }
+
+        #[test]
+        fn test_layered_queries_parse_to_condition_mutlti_brackets() {
+            let query = Query::new(
+                " (検索１ or -検索２)and(\"検索３\" or -\"検索４\")(\" 検索５ 検索６ \" or 検索７) "
+                    .into(),
+            );
+            assert_eq!(
+                LayeredQueries::parse(query)
+                    .unwrap()
+                    .to_condition()
+                    .unwrap(),
+                Condition::Operator(
+                    Operator::And,
+                    vec![
+                        Condition::Operator(
+                            Operator::Or,
+                            vec![
+                                Condition::Keyword("検索１".into()),
+                                Condition::Negative(Box::new(Condition::Keyword("検索２".into()))),
+                            ]
+                        ),
+                        Condition::Operator(
+                            Operator::Or,
+                            vec![
+                                Condition::ExactKeyword("検索３".into()),
+                                Condition::Negative(Box::new(Condition::ExactKeyword(
+                                    "検索４".into()
+                                )))
+                            ]
+                        ),
+                        Condition::Operator(
+                            Operator::Or,
+                            vec![
+                                Condition::ExactKeyword(" 検索５ 検索６ ".into()),
+                                Condition::Keyword("検索７".into())
+                            ]
+                        )
+                    ]
+                )
+            )
+        }
+
+        #[test]
+        fn test_layered_queries_parse_to_condition_nested_brackets() {
+            let query = Query::new(
+                " (検索１ and -検索２) or ((\"検索３\" or -\"検索４\") and (\" 検索５ 検索６ \" or 検索７)) "
+                    .into(),
+            );
+            assert_eq!(
+                LayeredQueries::parse(query)
+                    .unwrap()
+                    .to_condition()
+                    .unwrap(),
+                Condition::Operator(
+                    Operator::Or,
+                    vec![
+                        Condition::Operator(
+                            Operator::And,
+                            vec![
+                                Condition::Keyword("検索１".into()),
+                                Condition::Negative(Box::new(Condition::Keyword("検索２".into()))),
+                            ]
+                        ),
+                        Condition::Operator(
+                            Operator::And,
+                            vec![
+                                Condition::Operator(
+                                    Operator::Or,
+                                    vec![
+                                        Condition::ExactKeyword("検索３".into()),
+                                        Condition::Negative(Box::new(Condition::ExactKeyword(
+                                            "検索４".into()
+                                        )))
+                                    ]
+                                ),
+                                Condition::Operator(
+                                    Operator::Or,
+                                    vec![
+                                        Condition::ExactKeyword(" 検索５ 検索６ ".into()),
+                                        Condition::Keyword("検索７".into())
+                                    ]
+                                )
+                            ]
+                        ),
+                    ]
+                )
+            )
+        }
+
+        #[test]
+        fn test_layered_queries_parse_to_condition_unnecessary_nested_brackets() {
+            let query = Query::new(
+                " ((検索１ and -検索２)) or (((((\"検索３\" or -\"検索４\"))) and ((((\" 検索５ 検索６ \" or 検索７)))))) "
+                    .into(),
+            );
+            assert_eq!(
+                LayeredQueries::parse(query)
+                    .unwrap()
+                    .to_condition()
+                    .unwrap(),
+                Condition::Operator(
+                    Operator::Or,
+                    vec![
+                        Condition::Operator(
+                            Operator::And,
+                            vec![
+                                Condition::Keyword("検索１".into()),
+                                Condition::Negative(Box::new(Condition::Keyword("検索２".into()))),
+                            ]
+                        ),
+                        Condition::Operator(
+                            Operator::And,
+                            vec![
+                                Condition::Operator(
+                                    Operator::Or,
+                                    vec![
+                                        Condition::ExactKeyword("検索３".into()),
+                                        Condition::Negative(Box::new(Condition::ExactKeyword(
+                                            "検索４".into()
+                                        )))
+                                    ]
+                                ),
+                                Condition::Operator(
+                                    Operator::Or,
+                                    vec![
+                                        Condition::ExactKeyword(" 検索５ 検索６ ".into()),
+                                        Condition::Keyword("検索７".into())
+                                    ]
+                                )
+                            ]
+                        ),
+                    ]
+                )
             )
         }
 

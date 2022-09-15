@@ -123,8 +123,8 @@ impl Query {
     ) -> Result<Option<Condition>> {
         Ok(
             match (
-                Regex::new(r"^\(NEK:(\d)\)$")?.captures(self.value_ref()),
-                Regex::new(r"^\(EK:(\d)\)$")?.captures(self.value_ref()),
+                Regex::new(r"^\(NEK:(\d+)\)$")?.captures(self.value_ref()),
+                Regex::new(r"^\(EK:(\d+)\)$")?.captures(self.value_ref()),
             ) {
                 (Some(nek), _) => regex_match_number(nek.get(1), |i| {
                     negative_exact_keywords.get(i - 1).map(|nek| {
