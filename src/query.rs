@@ -224,6 +224,34 @@ mod tests {
         }
 
         #[test]
+        fn test_query_to_condition_ten_exact_keywords() {
+            let target = Query::new("\"ＡＡＡ１\"　\"ＡＡＡ２\"　\"ＡＡＡ３\"　\"ＡＡＡ４\"　\"ＡＡＡ５\"　\"ＡＡＡ６\"　\"ＡＡＡ７\"　\"ＡＡＡ８\"　\"ＡＡＡ９\"　\"ＡＡＡ１０\"".into());
+            let actual = target.to_condition().unwrap();
+            assert_eq!(
+                actual,
+                (
+                    false,
+                    Condition::Operator(
+                        Operator::And,
+                        vec![
+                            Condition::ExactKeyword("ＡＡＡ１".into()),
+                            Condition::ExactKeyword("ＡＡＡ２".into()),
+                            Condition::ExactKeyword("ＡＡＡ３".into()),
+                            Condition::ExactKeyword("ＡＡＡ４".into()),
+                            Condition::ExactKeyword("ＡＡＡ５".into()),
+                            Condition::ExactKeyword("ＡＡＡ６".into()),
+                            Condition::ExactKeyword("ＡＡＡ７".into()),
+                            Condition::ExactKeyword("ＡＡＡ８".into()),
+                            Condition::ExactKeyword("ＡＡＡ９".into()),
+                            Condition::ExactKeyword("ＡＡＡ１０".into()),
+                        ]
+                    ),
+                    false
+                )
+            )
+        }
+
+        #[test]
         fn test_query_to_condition_only_one_negative_keyword() {
             let target = Query::new("-ＡＡＡ".into());
             let actual = target.to_condition().unwrap();
@@ -232,6 +260,20 @@ mod tests {
                 (
                     false,
                     Condition::Negative(Box::new(Condition::Keyword("ＡＡＡ".into()))),
+                    false
+                )
+            )
+        }
+
+        #[test]
+        fn test_query_to_condition_only_one_double_negative_keyword() {
+            let target = Query::new("--ＡＡＡ".into());
+            let actual = target.to_condition().unwrap();
+            assert_eq!(
+                actual,
+                (
+                    false,
+                    Condition::Negative(Box::new(Condition::Keyword("-ＡＡＡ".into()))),
                     false
                 )
             )
@@ -252,14 +294,48 @@ mod tests {
         }
 
         #[test]
-        fn test_query_to_condition_only_one_double_negative_keyword() {
-            let target = Query::new("--ＡＡＡ".into());
+        fn test_query_to_condition_ten_negative_exact_keywords() {
+            let target = Query::new("-\"ＡＡＡ１\"　-\"ＡＡＡ２\"　-\"ＡＡＡ３\"　-\"ＡＡＡ４\"　-\"ＡＡＡ５\"　-\"ＡＡＡ６\"　-\"ＡＡＡ７\"　-\"ＡＡＡ８\"　-\"ＡＡＡ９\"　-\"ＡＡＡ１０\"".into());
             let actual = target.to_condition().unwrap();
             assert_eq!(
                 actual,
                 (
                     false,
-                    Condition::Negative(Box::new(Condition::Keyword("-ＡＡＡ".into()))),
+                    Condition::Operator(
+                        Operator::And,
+                        vec![
+                            Condition::Negative(Box::new(Condition::ExactKeyword(
+                                "ＡＡＡ１".into()
+                            ))),
+                            Condition::Negative(Box::new(Condition::ExactKeyword(
+                                "ＡＡＡ２".into()
+                            ))),
+                            Condition::Negative(Box::new(Condition::ExactKeyword(
+                                "ＡＡＡ３".into()
+                            ))),
+                            Condition::Negative(Box::new(Condition::ExactKeyword(
+                                "ＡＡＡ４".into()
+                            ))),
+                            Condition::Negative(Box::new(Condition::ExactKeyword(
+                                "ＡＡＡ５".into()
+                            ))),
+                            Condition::Negative(Box::new(Condition::ExactKeyword(
+                                "ＡＡＡ６".into()
+                            ))),
+                            Condition::Negative(Box::new(Condition::ExactKeyword(
+                                "ＡＡＡ７".into()
+                            ))),
+                            Condition::Negative(Box::new(Condition::ExactKeyword(
+                                "ＡＡＡ８".into()
+                            ))),
+                            Condition::Negative(Box::new(Condition::ExactKeyword(
+                                "ＡＡＡ９".into()
+                            ))),
+                            Condition::Negative(Box::new(Condition::ExactKeyword(
+                                "ＡＡＡ１０".into()
+                            ))),
+                        ]
+                    ),
                     false
                 )
             )

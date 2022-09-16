@@ -1,14 +1,14 @@
+use crate::condition::Condition;
 use crate::layered_query::LayeredQueries;
 use crate::query::Query;
+use eyre::Result;
 use regex::Match;
-
 mod condition;
 mod layered_query;
 mod query;
 
-pub fn main() {
-    let _result = LayeredQueries::parse(Query::new("search".into()))
-        .map(|layered_queries| layered_queries.to_condition());
+pub fn parse_query_to_condition(query: &str) -> Result<Condition> {
+    LayeredQueries::parse(Query::new(query.into()))?.to_condition()
 }
 
 pub(crate) fn regex_match_not_blank_query(regex_match: Option<Match>) -> Option<Query> {
