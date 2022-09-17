@@ -35,7 +35,8 @@ impl Query {
 
     pub(crate) fn to_condition(self) -> Result<(bool, Condition, bool)> {
         let query = self.normalize();
-        let (mut query, negative_exact_keywords, exact_keywords) = query.extract_exact_keyword()?;
+        let (mut query, negative_phrase_keywords, phrase_keywords) =
+            query.extract_phrase_keyword()?;
 
         query = Query::new(
             Regex::new(" +(?i)[A|Ａ](?i)[N|Ｎ](?i)[D|Ｄ] +")?
@@ -72,7 +73,7 @@ impl Query {
                     })
                     .filter_map(|keyword| {
                         keyword
-                            .keyword_condition(&negative_exact_keywords, &exact_keywords)
+                            .keyword_condition(&negative_phrase_keywords, &phrase_keywords)
                             .unwrap_or(None)
                     })
                     .collect::<Vec<Condition>>();
@@ -87,17 +88,17 @@ impl Query {
         ));
     }
 
-    fn extract_exact_keyword(self) -> Result<(Self, Vec<Query>, Vec<Query>)> {
+    fn extract_phrase_keyword(self) -> Result<(Self, Vec<Query>, Vec<Query>)> {
         let mut query = self;
-        let mut negative_exact_keywords = Vec::<Query>::new();
-        let mut exact_keywords = Vec::<Query>::new();
+        let mut negative_phrase_keywords = Vec::<Query>::new();
+        let mut phrase_keywords = Vec::<Query>::new();
         vec![
             (
                 Regex::new("-\"([^\"]*)\"")?,
-                &mut negative_exact_keywords,
+                &mut negative_phrase_keywords,
                 "NEK",
             ),
-            (Regex::new("\"([^\"]*)\"")?, &mut exact_keywords, "EK"),
+            (Regex::new("\"([^\"]*)\"")?, &mut phrase_keywords, "EK"),
         ]
         .iter_mut()
         .for_each(|(regex, vec, prefix)| {
@@ -115,11 +116,11 @@ impl Query {
                     .to_string(),
             )
         });
-        Ok((query, negative_exact_keywords, exact_keywords))
+        Ok((query, negative_phrase_keywords, phrase_keywords))
     }
 
     fn keyword_condition(
-        self, negative_exact_keywords: &Vec<Query>, exact_keywords: &Vec<Query>,
+        self, negative_phrase_keywords: &Vec<Query>, phrase_keywords: &Vec<Query>,
     ) -> Result<Option<Condition>> {
         Ok(
             match (
@@ -127,16 +128,16 @@ impl Query {
                 Regex::new(r"^\(EK:(\d+)\)$")?.captures(self.value_ref()),
             ) {
                 (Some(nek), _) => regex_match_number(nek.get(1), |i| {
-                    negative_exact_keywords.get(i - 1).map(|nek| {
-                        Condition::Negative(Box::new(Condition::ExactKeyword(
+                    negative_phrase_keywords.get(i - 1).map(|nek| {
+                        Condition::Negative(Box::new(Condition::PhraseKeyword(
                             nek.value_ref().to_string(),
                         )))
                     })
                 }),
                 (_, Some(ek)) => regex_match_number(ek.get(1), |i| {
-                    exact_keywords
+                    phrase_keywords
                         .get(i - 1)
-                        .map(|ek| Condition::ExactKeyword(ek.value_ref().to_string()))
+                        .map(|ek| Condition::PhraseKeyword(ek.value_ref().to_string()))
                 }),
                 (None, None) => match (self.value_ref().len(), self.value_ref().starts_with("-")) {
                     (1, _) => Some(Condition::Keyword(self.value())),
@@ -196,35 +197,35 @@ mod tests {
         }
 
         #[test]
-        fn test_query_to_condition_only_one_exact_keyword() {
+        fn test_query_to_condition_only_one_phrase_keyword() {
             let target = Query::new("\"ＡＡＡ　ＢＢＢ\"".into());
             let actual = target.to_condition().unwrap();
             assert_eq!(
                 actual,
                 (
                     false,
-                    Condition::ExactKeyword("ＡＡＡ ＢＢＢ".into()),
+                    Condition::PhraseKeyword("ＡＡＡ ＢＢＢ".into()),
                     false
                 )
             )
         }
 
         #[test]
-        fn test_query_to_condition_only_one_exact_keyword_include_special_word() {
+        fn test_query_to_condition_only_one_phrase_keyword_include_special_word() {
             let target = Query::new("\"　ＡＡＡ　and　-ＢＢＢ　or　ＣＣＣ　\"".into());
             let actual = target.to_condition().unwrap();
             assert_eq!(
                 actual,
                 (
                     false,
-                    Condition::ExactKeyword(" ＡＡＡ and -ＢＢＢ or ＣＣＣ ".into()),
+                    Condition::PhraseKeyword(" ＡＡＡ and -ＢＢＢ or ＣＣＣ ".into()),
                     false
                 )
             )
         }
 
         #[test]
-        fn test_query_to_condition_ten_exact_keywords() {
+        fn test_query_to_condition_ten_phrase_keywords() {
             let target = Query::new("\"ＡＡＡ１\"　\"ＡＡＡ２\"　\"ＡＡＡ３\"　\"ＡＡＡ４\"　\"ＡＡＡ５\"　\"ＡＡＡ６\"　\"ＡＡＡ７\"　\"ＡＡＡ８\"　\"ＡＡＡ９\"　\"ＡＡＡ１０\"".into());
             let actual = target.to_condition().unwrap();
             assert_eq!(
@@ -234,16 +235,16 @@ mod tests {
                     Condition::Operator(
                         Operator::And,
                         vec![
-                            Condition::ExactKeyword("ＡＡＡ１".into()),
-                            Condition::ExactKeyword("ＡＡＡ２".into()),
-                            Condition::ExactKeyword("ＡＡＡ３".into()),
-                            Condition::ExactKeyword("ＡＡＡ４".into()),
-                            Condition::ExactKeyword("ＡＡＡ５".into()),
-                            Condition::ExactKeyword("ＡＡＡ６".into()),
-                            Condition::ExactKeyword("ＡＡＡ７".into()),
-                            Condition::ExactKeyword("ＡＡＡ８".into()),
-                            Condition::ExactKeyword("ＡＡＡ９".into()),
-                            Condition::ExactKeyword("ＡＡＡ１０".into()),
+                            Condition::PhraseKeyword("ＡＡＡ１".into()),
+                            Condition::PhraseKeyword("ＡＡＡ２".into()),
+                            Condition::PhraseKeyword("ＡＡＡ３".into()),
+                            Condition::PhraseKeyword("ＡＡＡ４".into()),
+                            Condition::PhraseKeyword("ＡＡＡ５".into()),
+                            Condition::PhraseKeyword("ＡＡＡ６".into()),
+                            Condition::PhraseKeyword("ＡＡＡ７".into()),
+                            Condition::PhraseKeyword("ＡＡＡ８".into()),
+                            Condition::PhraseKeyword("ＡＡＡ９".into()),
+                            Condition::PhraseKeyword("ＡＡＡ１０".into()),
                         ]
                     ),
                     false
@@ -280,21 +281,21 @@ mod tests {
         }
 
         #[test]
-        fn test_query_to_condition_only_one_negative_exact_keyword() {
+        fn test_query_to_condition_only_one_negative_phrase_keyword() {
             let target = Query::new("-\"ＡＡＡ　ＢＢＢ\"".into());
             let actual = target.to_condition().unwrap();
             assert_eq!(
                 actual,
                 (
                     false,
-                    Condition::Negative(Box::new(Condition::ExactKeyword("ＡＡＡ ＢＢＢ".into()))),
+                    Condition::Negative(Box::new(Condition::PhraseKeyword("ＡＡＡ ＢＢＢ".into()))),
                     false
                 )
             )
         }
 
         #[test]
-        fn test_query_to_condition_ten_negative_exact_keywords() {
+        fn test_query_to_condition_ten_negative_phrase_keywords() {
             let target = Query::new("-\"ＡＡＡ１\"　-\"ＡＡＡ２\"　-\"ＡＡＡ３\"　-\"ＡＡＡ４\"　-\"ＡＡＡ５\"　-\"ＡＡＡ６\"　-\"ＡＡＡ７\"　-\"ＡＡＡ８\"　-\"ＡＡＡ９\"　-\"ＡＡＡ１０\"".into());
             let actual = target.to_condition().unwrap();
             assert_eq!(
@@ -304,34 +305,34 @@ mod tests {
                     Condition::Operator(
                         Operator::And,
                         vec![
-                            Condition::Negative(Box::new(Condition::ExactKeyword(
+                            Condition::Negative(Box::new(Condition::PhraseKeyword(
                                 "ＡＡＡ１".into()
                             ))),
-                            Condition::Negative(Box::new(Condition::ExactKeyword(
+                            Condition::Negative(Box::new(Condition::PhraseKeyword(
                                 "ＡＡＡ２".into()
                             ))),
-                            Condition::Negative(Box::new(Condition::ExactKeyword(
+                            Condition::Negative(Box::new(Condition::PhraseKeyword(
                                 "ＡＡＡ３".into()
                             ))),
-                            Condition::Negative(Box::new(Condition::ExactKeyword(
+                            Condition::Negative(Box::new(Condition::PhraseKeyword(
                                 "ＡＡＡ４".into()
                             ))),
-                            Condition::Negative(Box::new(Condition::ExactKeyword(
+                            Condition::Negative(Box::new(Condition::PhraseKeyword(
                                 "ＡＡＡ５".into()
                             ))),
-                            Condition::Negative(Box::new(Condition::ExactKeyword(
+                            Condition::Negative(Box::new(Condition::PhraseKeyword(
                                 "ＡＡＡ６".into()
                             ))),
-                            Condition::Negative(Box::new(Condition::ExactKeyword(
+                            Condition::Negative(Box::new(Condition::PhraseKeyword(
                                 "ＡＡＡ７".into()
                             ))),
-                            Condition::Negative(Box::new(Condition::ExactKeyword(
+                            Condition::Negative(Box::new(Condition::PhraseKeyword(
                                 "ＡＡＡ８".into()
                             ))),
-                            Condition::Negative(Box::new(Condition::ExactKeyword(
+                            Condition::Negative(Box::new(Condition::PhraseKeyword(
                                 "ＡＡＡ９".into()
                             ))),
-                            Condition::Negative(Box::new(Condition::ExactKeyword(
+                            Condition::Negative(Box::new(Condition::PhraseKeyword(
                                 "ＡＡＡ１０".into()
                             ))),
                         ]
@@ -362,7 +363,7 @@ mod tests {
         }
 
         #[test]
-        fn test_query_to_condition_two_exact_keywords() {
+        fn test_query_to_condition_two_phrase_keywords() {
             let target = Query::new("\"ＡＡＡ　ＢＢＢ\"　\"ＣＣＣ　ＤＤＤ\"".into());
             let actual = target.to_condition().unwrap();
             assert_eq!(
@@ -372,8 +373,8 @@ mod tests {
                     Condition::Operator(
                         Operator::And,
                         vec![
-                            Condition::ExactKeyword("ＡＡＡ ＢＢＢ".into()),
-                            Condition::ExactKeyword("ＣＣＣ ＤＤＤ".into())
+                            Condition::PhraseKeyword("ＡＡＡ ＢＢＢ".into()),
+                            Condition::PhraseKeyword("ＣＣＣ ＤＤＤ".into())
                         ]
                     ),
                     false
@@ -382,7 +383,7 @@ mod tests {
         }
 
         #[test]
-        fn test_query_to_condition_only_one_exact_keyword_and_singular_quotation() {
+        fn test_query_to_condition_only_one_phrase_keyword_and_singular_quotation() {
             let target = Query::new("\"ＡＡＡ　ＢＢＢ\"　\"ＣＣＣ　ＤＤＤ".into());
             let actual = target.to_condition().unwrap();
             assert_eq!(
@@ -392,7 +393,7 @@ mod tests {
                     Condition::Operator(
                         Operator::And,
                         vec![
-                            Condition::ExactKeyword("ＡＡＡ ＢＢＢ".into()),
+                            Condition::PhraseKeyword("ＡＡＡ ＢＢＢ".into()),
                             Condition::Keyword("\"ＣＣＣ".into()),
                             Condition::Keyword("ＤＤＤ".into())
                         ]
@@ -423,7 +424,7 @@ mod tests {
         }
 
         #[test]
-        fn test_query_to_condition_two_negative_exact_keywords() {
+        fn test_query_to_condition_two_negative_phrase_keywords() {
             let target = Query::new("-\"ＡＡＡ　ＢＢＢ\"　-\"ＣＣＣ　ＤＤＤ\"".into());
             let actual = target.to_condition().unwrap();
             assert_eq!(
@@ -433,10 +434,10 @@ mod tests {
                     Condition::Operator(
                         Operator::And,
                         vec![
-                            Condition::Negative(Box::new(Condition::ExactKeyword(
+                            Condition::Negative(Box::new(Condition::PhraseKeyword(
                                 "ＡＡＡ ＢＢＢ".into()
                             ))),
-                            Condition::Negative(Box::new(Condition::ExactKeyword(
+                            Condition::Negative(Box::new(Condition::PhraseKeyword(
                                 "ＣＣＣ ＤＤＤ".into()
                             )))
                         ]
@@ -458,8 +459,10 @@ mod tests {
                         Operator::And,
                         vec![
                             Condition::Keyword("ＡＡＡ".into()),
-                            Condition::ExactKeyword("ＢＢＢ".into()),
-                            Condition::Negative(Box::new(Condition::ExactKeyword("ＣＣＣ".into()))),
+                            Condition::PhraseKeyword("ＢＢＢ".into()),
+                            Condition::Negative(Box::new(Condition::PhraseKeyword(
+                                "ＣＣＣ".into()
+                            ))),
                             Condition::Negative(Box::new(Condition::Keyword("ＤＤＤ".into())))
                         ]
                     ),
@@ -481,10 +484,14 @@ mod tests {
                         Operator::And,
                         vec![
                             Condition::Keyword("ＡＡＡ".into()),
-                            Condition::ExactKeyword("ＢＢＢ".into()),
-                            Condition::ExactKeyword("ｂｂｂ".into()),
-                            Condition::Negative(Box::new(Condition::ExactKeyword("ＣＣＣ".into()))),
-                            Condition::Negative(Box::new(Condition::ExactKeyword("ｃｃｃ".into()))),
+                            Condition::PhraseKeyword("ＢＢＢ".into()),
+                            Condition::PhraseKeyword("ｂｂｂ".into()),
+                            Condition::Negative(Box::new(Condition::PhraseKeyword(
+                                "ＣＣＣ".into()
+                            ))),
+                            Condition::Negative(Box::new(Condition::PhraseKeyword(
+                                "ｃｃｃ".into()
+                            ))),
                             Condition::Negative(Box::new(Condition::Keyword("ＤＤＤ".into())))
                         ]
                     ),
@@ -514,7 +521,7 @@ mod tests {
         }
 
         #[test]
-        fn test_query_to_condition_two_exact_keywords_with_or() {
+        fn test_query_to_condition_two_phrase_keywords_with_or() {
             let target = Query::new("\"ＡＡＡ　ＢＢＢ\" or　\"ＣＣＣ　ＤＤＤ\"".into());
             let actual = target.to_condition().unwrap();
             assert_eq!(
@@ -524,8 +531,8 @@ mod tests {
                     Condition::Operator(
                         Operator::Or,
                         vec![
-                            Condition::ExactKeyword("ＡＡＡ ＢＢＢ".into()),
-                            Condition::ExactKeyword("ＣＣＣ ＤＤＤ".into())
+                            Condition::PhraseKeyword("ＡＡＡ ＢＢＢ".into()),
+                            Condition::PhraseKeyword("ＣＣＣ ＤＤＤ".into())
                         ]
                     ),
                     false
@@ -554,7 +561,7 @@ mod tests {
         }
 
         #[test]
-        fn test_query_to_condition_two_negative_exact_keywords_with_or() {
+        fn test_query_to_condition_two_negative_phrase_keywords_with_or() {
             let target = Query::new("-\"ＡＡＡ　ＢＢＢ\" or　-\"ＣＣＣ　ＤＤＤ\"".into());
             let actual = target.to_condition().unwrap();
             assert_eq!(
@@ -564,10 +571,10 @@ mod tests {
                     Condition::Operator(
                         Operator::Or,
                         vec![
-                            Condition::Negative(Box::new(Condition::ExactKeyword(
+                            Condition::Negative(Box::new(Condition::PhraseKeyword(
                                 "ＡＡＡ ＢＢＢ".into()
                             ))),
-                            Condition::Negative(Box::new(Condition::ExactKeyword(
+                            Condition::Negative(Box::new(Condition::PhraseKeyword(
                                 "ＣＣＣ ＤＤＤ".into()
                             )))
                         ]
@@ -618,7 +625,7 @@ mod tests {
         }
 
         #[test]
-        fn test_query_to_condition_two_exact_keywords_with_and() {
+        fn test_query_to_condition_two_phrase_keywords_with_and() {
             let target = Query::new("\"ＡＡＡ　ＢＢＢ\" and　\"ＣＣＣ　ＤＤＤ\"".into());
             let actual = target.to_condition().unwrap();
             assert_eq!(
@@ -628,8 +635,8 @@ mod tests {
                     Condition::Operator(
                         Operator::And,
                         vec![
-                            Condition::ExactKeyword("ＡＡＡ ＢＢＢ".into()),
-                            Condition::ExactKeyword("ＣＣＣ ＤＤＤ".into())
+                            Condition::PhraseKeyword("ＡＡＡ ＢＢＢ".into()),
+                            Condition::PhraseKeyword("ＣＣＣ ＤＤＤ".into())
                         ]
                     ),
                     false
@@ -658,7 +665,7 @@ mod tests {
         }
 
         #[test]
-        fn test_query_to_condition_two_negative_exact_keywords_with_and() {
+        fn test_query_to_condition_two_negative_phrase_keywords_with_and() {
             let target = Query::new("-\"ＡＡＡ　ＢＢＢ\" and　-\"ＣＣＣ　ＤＤＤ\"".into());
             let actual = target.to_condition().unwrap();
             assert_eq!(
@@ -668,10 +675,10 @@ mod tests {
                     Condition::Operator(
                         Operator::And,
                         vec![
-                            Condition::Negative(Box::new(Condition::ExactKeyword(
+                            Condition::Negative(Box::new(Condition::PhraseKeyword(
                                 "ＡＡＡ ＢＢＢ".into()
                             ))),
-                            Condition::Negative(Box::new(Condition::ExactKeyword(
+                            Condition::Negative(Box::new(Condition::PhraseKeyword(
                                 "ＣＣＣ ＤＤＤ".into()
                             )))
                         ]
@@ -765,7 +772,7 @@ mod tests {
         }
 
         #[test]
-        fn test_query_to_condition_and_or_in_exact_keyword() {
+        fn test_query_to_condition_and_or_in_phrase_keyword() {
             let target = Query::new("ＡＡＡ　\"　and　ＢＢＢ　or　ＣＣＣ　and　\"　\"　or　ＤＤＤ　and　ＥＥＥ　or　\"　ＦＦＦ".into());
             let actual = target.to_condition().unwrap();
             assert_eq!(
@@ -776,8 +783,8 @@ mod tests {
                         Operator::And,
                         vec![
                             Condition::Keyword("ＡＡＡ".into()),
-                            Condition::ExactKeyword(" and ＢＢＢ or ＣＣＣ and ".into()),
-                            Condition::ExactKeyword(" or ＤＤＤ and ＥＥＥ or ".into()),
+                            Condition::PhraseKeyword(" and ＢＢＢ or ＣＣＣ and ".into()),
+                            Condition::PhraseKeyword(" or ＤＤＤ and ＥＥＥ or ".into()),
                             Condition::Keyword("ＦＦＦ".into()),
                         ]
                     ),
@@ -811,13 +818,13 @@ mod tests {
                             Condition::Operator(
                                 Operator::And,
                                 vec![
-                                    Condition::ExactKeyword("c1 and c2".into()),
-                                    Condition::Negative(Box::new(Condition::ExactKeyword(
+                                    Condition::PhraseKeyword("c1 and c2".into()),
+                                    Condition::Negative(Box::new(Condition::PhraseKeyword(
                                         "c3 or c4".into()
                                     ))),
                                     Condition::Keyword("ＤandＤ".into()),
-                                    Condition::ExactKeyword(" ＥＥＥ ＡNＤ ＦＦＦ ".into()),
-                                    Condition::Negative(Box::new(Condition::ExactKeyword(
+                                    Condition::PhraseKeyword(" ＥＥＥ ＡNＤ ＦＦＦ ".into()),
+                                    Condition::Negative(Box::new(Condition::PhraseKeyword(
                                         " ＧＧＧ  oＲ  ＨＨＨ ".into()
                                     )))
                                 ]

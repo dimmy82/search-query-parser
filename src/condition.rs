@@ -4,7 +4,7 @@ use crate::condition::Condition::Negative;
 pub enum Condition {
     None,
     Keyword(String),
-    ExactKeyword(String),
+    PhraseKeyword(String),
     Negative(Box<Condition>),
     Operator(Operator, Vec<Condition>),
 }
@@ -66,10 +66,10 @@ mod tests {
         }
 
         #[test]
-        fn test_simplify_exact_keyword() {
+        fn test_simplify_phrase_keyword() {
             assert_eq!(
-                Condition::ExactKeyword("exact keyword".into()).simplify(),
-                Condition::ExactKeyword("exact keyword".into())
+                Condition::PhraseKeyword("phrase keyword".into()).simplify(),
+                Condition::PhraseKeyword("phrase keyword".into())
             )
         }
 
@@ -90,11 +90,11 @@ mod tests {
         }
 
         #[test]
-        fn test_simplify_negative_exact_keyword() {
+        fn test_simplify_negative_phrase_keyword() {
             assert_eq!(
-                Condition::Negative(Box::new(Condition::ExactKeyword("exact keyword".into())))
+                Condition::Negative(Box::new(Condition::PhraseKeyword("phrase keyword".into())))
                     .simplify(),
-                Condition::Negative(Box::new(Condition::ExactKeyword("exact keyword".into())))
+                Condition::Negative(Box::new(Condition::PhraseKeyword("phrase keyword".into())))
             )
         }
 
@@ -127,8 +127,8 @@ mod tests {
                     Operator::And,
                     vec![
                         Condition::Keyword("keyword".into()),
-                        Condition::Negative(Box::new(Condition::ExactKeyword(
-                            "exact keyword".into()
+                        Condition::Negative(Box::new(Condition::PhraseKeyword(
+                            "phrase keyword".into()
                         )))
                     ]
                 )))
@@ -137,8 +137,8 @@ mod tests {
                     Operator::And,
                     vec![
                         Condition::Keyword("keyword".into()),
-                        Condition::Negative(Box::new(Condition::ExactKeyword(
-                            "exact keyword".into()
+                        Condition::Negative(Box::new(Condition::PhraseKeyword(
+                            "phrase keyword".into()
                         )))
                     ]
                 )))
@@ -152,8 +152,8 @@ mod tests {
                     Operator::Or,
                     vec![
                         Condition::Keyword("keyword".into()),
-                        Condition::Negative(Box::new(Condition::ExactKeyword(
-                            "exact keyword".into()
+                        Condition::Negative(Box::new(Condition::PhraseKeyword(
+                            "phrase keyword".into()
                         )))
                     ]
                 )))
@@ -162,8 +162,8 @@ mod tests {
                     Operator::Or,
                     vec![
                         Condition::Keyword("keyword".into()),
-                        Condition::Negative(Box::new(Condition::ExactKeyword(
-                            "exact keyword".into()
+                        Condition::Negative(Box::new(Condition::PhraseKeyword(
+                            "phrase keyword".into()
                         )))
                     ]
                 )))
@@ -196,14 +196,14 @@ mod tests {
         }
 
         #[test]
-        fn test_simplify_operator_and_with_only_exact_keyword() {
+        fn test_simplify_operator_and_with_only_phrase_keyword() {
             assert_eq!(
                 Condition::Operator(
                     Operator::And,
-                    vec![Condition::ExactKeyword("exact keyword".into())]
+                    vec![Condition::PhraseKeyword("phrase keyword".into())]
                 )
                 .simplify(),
-                Condition::ExactKeyword("exact keyword".into())
+                Condition::PhraseKeyword("phrase keyword".into())
             )
         }
 
@@ -230,7 +230,7 @@ mod tests {
                         Operator::Or,
                         vec![
                             Condition::Keyword("keyword".into()),
-                            Condition::ExactKeyword("exact keyword".into()),
+                            Condition::PhraseKeyword("phrase keyword".into()),
                         ]
                     )]
                 )
@@ -239,7 +239,7 @@ mod tests {
                     Operator::Or,
                     vec![
                         Condition::Keyword("keyword".into()),
-                        Condition::ExactKeyword("exact keyword".into()),
+                        Condition::PhraseKeyword("phrase keyword".into()),
                     ]
                 )
             )
@@ -268,14 +268,14 @@ mod tests {
                     vec![
                         Condition::Keyword("keyword".into()),
                         Condition::None,
-                        Condition::ExactKeyword("exact keyword".into()),
+                        Condition::PhraseKeyword("phrase keyword".into()),
                         Condition::None,
                         Condition::Negative(Box::new(Condition::Keyword("negative".into()))),
                         Condition::Operator(
                             Operator::Or,
                             vec![
                                 Condition::Keyword("keyword".into()),
-                                Condition::ExactKeyword("exact keyword".into()),
+                                Condition::PhraseKeyword("phrase keyword".into()),
                             ]
                         )
                     ]
@@ -285,13 +285,13 @@ mod tests {
                     Operator::And,
                     vec![
                         Condition::Keyword("keyword".into()),
-                        Condition::ExactKeyword("exact keyword".into()),
+                        Condition::PhraseKeyword("phrase keyword".into()),
                         Condition::Negative(Box::new(Condition::Keyword("negative".into()))),
                         Condition::Operator(
                             Operator::Or,
                             vec![
                                 Condition::Keyword("keyword".into()),
-                                Condition::ExactKeyword("exact keyword".into()),
+                                Condition::PhraseKeyword("phrase keyword".into()),
                             ]
                         )
                     ]
@@ -325,14 +325,14 @@ mod tests {
         }
 
         #[test]
-        fn test_simplify_operator_or_with_only_exact_keyword() {
+        fn test_simplify_operator_or_with_only_phrase_keyword() {
             assert_eq!(
                 Condition::Operator(
                     Operator::Or,
-                    vec![Condition::ExactKeyword("exact keyword".into())]
+                    vec![Condition::PhraseKeyword("phrase keyword".into())]
                 )
                 .simplify(),
-                Condition::ExactKeyword("exact keyword".into())
+                Condition::PhraseKeyword("phrase keyword".into())
             )
         }
 
@@ -359,7 +359,7 @@ mod tests {
                         Operator::And,
                         vec![
                             Condition::Keyword("keyword".into()),
-                            Condition::ExactKeyword("exact keyword".into()),
+                            Condition::PhraseKeyword("phrase keyword".into()),
                         ]
                     )]
                 )
@@ -368,7 +368,7 @@ mod tests {
                     Operator::And,
                     vec![
                         Condition::Keyword("keyword".into()),
-                        Condition::ExactKeyword("exact keyword".into()),
+                        Condition::PhraseKeyword("phrase keyword".into()),
                     ]
                 )
             )
@@ -397,7 +397,7 @@ mod tests {
                     vec![
                         Condition::Keyword("keyword".into()),
                         Condition::None,
-                        Condition::ExactKeyword("exact keyword".into()),
+                        Condition::PhraseKeyword("phrase keyword".into()),
                         Condition::None,
                         Condition::Negative(Box::new(Condition::Keyword("negative".into()))),
                         Condition::None,
@@ -405,7 +405,7 @@ mod tests {
                             Operator::And,
                             vec![
                                 Condition::Keyword("keyword 1".into()),
-                                Condition::ExactKeyword("exact keyword 1".into()),
+                                Condition::PhraseKeyword("phrase keyword 1".into()),
                             ]
                         )
                     ]
@@ -415,13 +415,13 @@ mod tests {
                     Operator::Or,
                     vec![
                         Condition::Keyword("keyword".into()),
-                        Condition::ExactKeyword("exact keyword".into()),
+                        Condition::PhraseKeyword("phrase keyword".into()),
                         Condition::Negative(Box::new(Condition::Keyword("negative".into()))),
                         Condition::Operator(
                             Operator::And,
                             vec![
                                 Condition::Keyword("keyword 1".into()),
-                                Condition::ExactKeyword("exact keyword 1".into()),
+                                Condition::PhraseKeyword("phrase keyword 1".into()),
                             ]
                         )
                     ]
