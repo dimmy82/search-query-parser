@@ -19,24 +19,87 @@ impl Query {
         self.0.as_str()
     }
 
-    pub(crate) fn normalize(self) -> Self {
+    pub(crate) fn normalize_double_quotation(self) -> Self {
+        Self(self.value().replace("”", "\""))
+    }
+
+    pub(crate) fn normalize_symbols_except_double_quotation(self) -> Self {
         Self(
             self.value()
                 .replace("（", "(")
                 .replace("）", ")")
-                .replace("”", "\"")
                 .replace("　", " "),
         )
+    }
+
+    fn remove_double_quotation(self) -> Self {
+        Self(self.value().replace("\"", ""))
     }
 
     pub(crate) fn is_not_blank(&self) -> bool {
         self.value_ref().replace(" ", "").is_empty() == false
     }
 
+    pub(crate) fn extract_phrase_keywords(self) -> Result<(Self, Vec<Query>, Vec<Query>)> {
+        let mut query = self;
+        let mut negative_phrase_keywords = Vec::<Query>::new();
+        let mut phrase_keywords = Vec::<Query>::new();
+        vec![
+            (
+                Regex::new("-\"([^\"]*)\"")?,
+                &mut negative_phrase_keywords,
+                "NPK",
+            ),
+            (Regex::new("\"([^\"]*)\"")?, &mut phrase_keywords, "PK"),
+        ]
+        .iter_mut()
+        .for_each(|(regex, vec, prefix)| {
+            query = Query::new(
+                regex
+                    .replace_all(query.value_ref(), |captures: &Captures| {
+                        match regex_match_not_blank_query(captures.get(1)) {
+                            Some(q) => {
+                                vec.push(q);
+                                format!(" ”{}:{}” ", prefix, vec.len())
+                            }
+                            None => String::from(""),
+                        }
+                    })
+                    .to_string(),
+            )
+        });
+        query = query.remove_double_quotation();
+        Ok((query, negative_phrase_keywords, phrase_keywords))
+    }
+
+    pub(crate) fn combine_phrase_keywords(
+        self, negative_phrase_keywords: &Vec<Query>, phrase_keywords: &Vec<Query>,
+    ) -> Result<Self> {
+        let mut query = self;
+        vec![
+            (Regex::new(r"”NPK:(\d+)”")?, negative_phrase_keywords, "-"),
+            (Regex::new(r"”PK:(\d+)”")?, phrase_keywords, ""),
+        ]
+        .into_iter()
+        .for_each(|(regex, vec, prefix)| {
+            query = Query::new(
+                regex
+                    .replace_all(query.value_ref(), |captures: &Captures| {
+                        regex_match_number(captures.get(1), |i| {
+                            vec.get(i - 1)
+                                .map(|q| format!("{}\"{}\"", prefix, q.value_ref()))
+                        })
+                        .unwrap_or("".into())
+                    })
+                    .into(),
+            );
+        });
+        Ok(query)
+    }
+
     pub(crate) fn to_condition(self) -> Result<(bool, Condition, bool)> {
-        let query = self.normalize();
         let (mut query, negative_phrase_keywords, phrase_keywords) =
-            query.extract_phrase_keyword()?;
+            self.extract_phrase_keywords()?;
 
         query = Query::new(
             Regex::new(" +(?i)[A|Ａ](?i)[N|Ｎ](?i)[D|Ｄ] +")?
@@ -88,56 +151,25 @@ impl Query {
         ));
     }
 
-    fn extract_phrase_keyword(self) -> Result<(Self, Vec<Query>, Vec<Query>)> {
-        let mut query = self;
-        let mut negative_phrase_keywords = Vec::<Query>::new();
-        let mut phrase_keywords = Vec::<Query>::new();
-        vec![
-            (
-                Regex::new("-\"([^\"]*)\"")?,
-                &mut negative_phrase_keywords,
-                "NEK",
-            ),
-            (Regex::new("\"([^\"]*)\"")?, &mut phrase_keywords, "EK"),
-        ]
-        .iter_mut()
-        .for_each(|(regex, vec, prefix)| {
-            query = Query::new(
-                regex
-                    .replace_all(query.value_ref(), |captures: &Captures| {
-                        match regex_match_not_blank_query(captures.get(1)) {
-                            Some(q) => {
-                                vec.push(q);
-                                format!(" ({}:{}) ", prefix, vec.len())
-                            }
-                            None => String::from(""),
-                        }
-                    })
-                    .to_string(),
-            )
-        });
-        Ok((query, negative_phrase_keywords, phrase_keywords))
-    }
-
     fn keyword_condition(
         self, negative_phrase_keywords: &Vec<Query>, phrase_keywords: &Vec<Query>,
     ) -> Result<Option<Condition>> {
         Ok(
             match (
-                Regex::new(r"^\(NEK:(\d+)\)$")?.captures(self.value_ref()),
-                Regex::new(r"^\(EK:(\d+)\)$")?.captures(self.value_ref()),
+                Regex::new(r"^”NPK:(\d+)”$")?.captures(self.value_ref()),
+                Regex::new(r"^”PK:(\d+)”$")?.captures(self.value_ref()),
             ) {
-                (Some(nek), _) => regex_match_number(nek.get(1), |i| {
-                    negative_phrase_keywords.get(i - 1).map(|nek| {
+                (Some(npk), _) => regex_match_number(npk.get(1), |i| {
+                    negative_phrase_keywords.get(i - 1).map(|npk| {
                         Condition::Negative(Box::new(Condition::PhraseKeyword(
-                            nek.value_ref().to_string(),
+                            npk.value_ref().into(),
                         )))
                     })
                 }),
-                (_, Some(ek)) => regex_match_number(ek.get(1), |i| {
+                (_, Some(pk)) => regex_match_number(pk.get(1), |i| {
                     phrase_keywords
                         .get(i - 1)
-                        .map(|ek| Condition::PhraseKeyword(ek.value_ref().to_string()))
+                        .map(|pk| Condition::PhraseKeyword(pk.value_ref().into()))
                 }),
                 (None, None) => match (self.value_ref().len(), self.value_ref().starts_with("-")) {
                     (1, _) => Some(Condition::Keyword(self.value())),
@@ -169,12 +201,216 @@ mod tests {
         use super::*;
 
         #[test]
-        fn test_normalize_replace_full_width_bracket_quotation_and_space() {
+        fn test_normalize_replace_full_width_double_quotation() {
             let target =
                 Query::new("　ＡＡＡ　（”１１１　ＣＣＣ”　（-（　ＤＤＤ　エエエ　）　ＦＦＦ）　ＧＧＧ　（ＨＨＨ　-”あああ　いいい”　ううう））　”　ＪＪＪ　”　-（ＫＫＫ　（　）　ＬＬＬ）　　（ＭＭＭ）　２２２　".into());
             assert_eq!(
-                target.normalize().value_ref(),
-                " ＡＡＡ (\"１１１ ＣＣＣ\" (-( ＤＤＤ エエエ ) ＦＦＦ) ＧＧＧ (ＨＨＨ -\"あああ いいい\" ううう)) \" ＪＪＪ \" -(ＫＫＫ ( ) ＬＬＬ)  (ＭＭＭ) ２２２ "
+                target.normalize_double_quotation().value_ref(),
+                "　ＡＡＡ　（\"１１１　ＣＣＣ\"　（-（　ＤＤＤ　エエエ　）　ＦＦＦ）　ＧＧＧ　（ＨＨＨ　-\"あああ　いいい\"　ううう））　\"　ＪＪＪ　\"　-（ＫＫＫ　（　）　ＬＬＬ）　　（ＭＭＭ）　２２２　"
+            )
+        }
+
+        #[test]
+        fn test_normalize_replace_full_width_bracket_and_space() {
+            let target =
+                Query::new("　ＡＡＡ　（”１１１　ＣＣＣ”　（-（　ＤＤＤ　エエエ　）　ＦＦＦ）　ＧＧＧ　（ＨＨＨ　-”あああ　いいい”　ううう））　”　ＪＪＪ　”　-（ＫＫＫ　（　）　ＬＬＬ）　　（ＭＭＭ）　２２２　".into());
+            assert_eq!(
+                target.normalize_symbols_except_double_quotation().value_ref(),
+                " ＡＡＡ (”１１１ ＣＣＣ” (-( ＤＤＤ エエエ ) ＦＦＦ) ＧＧＧ (ＨＨＨ -”あああ いいい” ううう)) ” ＪＪＪ ” -(ＫＫＫ ( ) ＬＬＬ)  (ＭＭＭ) ２２２ "
+            )
+        }
+    }
+
+    mod test_extract_phrase_keywords {
+        use super::*;
+
+        #[test]
+        fn test_extract_phrase_keywords_empty() {
+            let target = Query::new("Ａ１ Ａ２".into());
+            let (query, negative_phrase_keywords, phrase_keywords) =
+                target.extract_phrase_keywords().unwrap();
+            assert_eq!(query, Query::new("Ａ１ Ａ２".into()));
+            assert_eq!(negative_phrase_keywords, vec![]);
+            assert_eq!(phrase_keywords, vec![])
+        }
+
+        #[test]
+        fn test_extract_phrase_keywords_one_phrase_keyword() {
+            let target = Query::new("Ａ１ \"Ｐ１\" Ａ２".into());
+            let (query, negative_phrase_keywords, phrase_keywords) =
+                target.extract_phrase_keywords().unwrap();
+            assert_eq!(query, Query::new("Ａ１  ”PK:1”  Ａ２".into()));
+            assert_eq!(negative_phrase_keywords, vec![]);
+            assert_eq!(phrase_keywords, vec![Query::new("Ｐ１".into())])
+        }
+
+        #[test]
+        fn test_extract_phrase_keywords_one_negative_phrase_keyword() {
+            let target = Query::new("Ａ１ -\"ＮＰ１\" Ａ２".into());
+            let (query, negative_phrase_keywords, phrase_keywords) =
+                target.extract_phrase_keywords().unwrap();
+            assert_eq!(query, Query::new("Ａ１  ”NPK:1”  Ａ２".into()));
+            assert_eq!(negative_phrase_keywords, vec![Query::new("ＮＰ１".into())]);
+            assert_eq!(phrase_keywords, vec![])
+        }
+
+        #[test]
+        fn test_extract_phrase_keywords_multi_phrase_keywords_and_negative_phrase_keywords() {
+            let target = Query::new("-\"ＮＰ１\" Ａ１ or \"Ｐ３\" and -\"ＮＰ３\" -\"ＮＰ２\" \"Ｐ２\" or Ａ２ and \"Ｐ１\"".into());
+            let (query, negative_phrase_keywords, phrase_keywords) =
+                target.extract_phrase_keywords().unwrap();
+            assert_eq!(query, Query::new(" ”NPK:1”  Ａ１ or  ”PK:1”  and  ”NPK:2”   ”NPK:3”   ”PK:2”  or Ａ２ and  ”PK:3” ".into()));
+            assert_eq!(
+                negative_phrase_keywords,
+                vec![
+                    Query::new("ＮＰ１".into()),
+                    Query::new("ＮＰ３".into()),
+                    Query::new("ＮＰ２".into())
+                ]
+            );
+            assert_eq!(
+                phrase_keywords,
+                vec![
+                    Query::new("Ｐ３".into()),
+                    Query::new("Ｐ２".into()),
+                    Query::new("Ｐ１".into())
+                ]
+            )
+        }
+
+        #[test]
+        fn test_extract_phrase_keywords_special_symbol_in_phrase_keyword() {
+            let target = Query::new("Ａ１ \" Ｐ１ and Ｐ２ -(Ｐ３ or Ｐ４) \" Ａ２".into());
+            let (query, negative_phrase_keywords, phrase_keywords) =
+                target.extract_phrase_keywords().unwrap();
+            assert_eq!(query, Query::new("Ａ１  ”PK:1”  Ａ２".into()));
+            assert_eq!(negative_phrase_keywords, vec![]);
+            assert_eq!(
+                phrase_keywords,
+                vec![Query::new(" Ｐ１ and Ｐ２ -(Ｐ３ or Ｐ４) ".into())]
+            )
+        }
+
+        #[test]
+        fn test_extract_phrase_keywords_full_width_special_symbol_in_phrase_keyword() {
+            let target =
+                Query::new("Ａ１ \"　Ｐ１　ａｎｄ　Ｐ２　−（Ｐ３　ｏｒ　Ｐ４）　\" Ａ２".into());
+            let (query, negative_phrase_keywords, phrase_keywords) =
+                target.extract_phrase_keywords().unwrap();
+            assert_eq!(query, Query::new("Ａ１  ”PK:1”  Ａ２".into()));
+            assert_eq!(negative_phrase_keywords, vec![]);
+            assert_eq!(
+                phrase_keywords,
+                vec![Query::new(
+                    "　Ｐ１　ａｎｄ　Ｐ２　−（Ｐ３　ｏｒ　Ｐ４）　".into()
+                )]
+            )
+        }
+
+        #[test]
+        fn test_extract_phrase_keywords_special_symbol_in_negative_phrase_keyword() {
+            let target = Query::new("Ａ１ -\" Ｐ１ and Ｐ２ -(Ｐ３ or Ｐ４) \" Ａ２".into());
+            let (query, negative_phrase_keywords, phrase_keywords) =
+                target.extract_phrase_keywords().unwrap();
+            assert_eq!(query, Query::new("Ａ１  ”NPK:1”  Ａ２".into()));
+            assert_eq!(
+                negative_phrase_keywords,
+                vec![Query::new(" Ｐ１ and Ｐ２ -(Ｐ３ or Ｐ４) ".into())]
+            );
+            assert_eq!(phrase_keywords, vec![])
+        }
+
+        #[test]
+        fn test_extract_phrase_keywords_full_width_special_symbol_in_negative_phrase_keyword() {
+            let target =
+                Query::new("Ａ１ -\"　Ｐ１　ａｎｄ　Ｐ２　−（Ｐ３　ｏｒ　Ｐ４）　\" Ａ２".into());
+            let (query, negative_phrase_keywords, phrase_keywords) =
+                target.extract_phrase_keywords().unwrap();
+            assert_eq!(query, Query::new("Ａ１  ”NPK:1”  Ａ２".into()));
+            assert_eq!(
+                negative_phrase_keywords,
+                vec![Query::new(
+                    "　Ｐ１　ａｎｄ　Ｐ２　−（Ｐ３　ｏｒ　Ｐ４）　".into()
+                )]
+            );
+            assert_eq!(phrase_keywords, vec![])
+        }
+
+        #[test]
+        fn test_extract_phrase_keywords_excess_double_quotation_1() {
+            let target = Query::new("Ａ１ \"Ｐ１\" -\"ＮＰ１\" \" Ａ２".into());
+            let (query, negative_phrase_keywords, phrase_keywords) =
+                target.extract_phrase_keywords().unwrap();
+            assert_eq!(query, Query::new("Ａ１  ”PK:1”   ”NPK:1”   Ａ２".into()));
+            assert_eq!(negative_phrase_keywords, vec![Query::new("ＮＰ１".into())]);
+            assert_eq!(phrase_keywords, vec![Query::new("Ｐ１".into())])
+        }
+
+        #[test]
+        fn test_extract_phrase_keywords_excess_double_quotation_2() {
+            let target = Query::new("Ａ１ \"Ｐ１\" -\"ＮＰ１\" -\"Ａ２".into());
+            let (query, negative_phrase_keywords, phrase_keywords) =
+                target.extract_phrase_keywords().unwrap();
+            assert_eq!(query, Query::new("Ａ１  ”PK:1”   ”NPK:1”  -Ａ２".into()));
+            assert_eq!(negative_phrase_keywords, vec![Query::new("ＮＰ１".into())]);
+            assert_eq!(phrase_keywords, vec![Query::new("Ｐ１".into())])
+        }
+    }
+
+    mod test_combine_phrase_keywords {
+        use super::*;
+
+        #[test]
+        fn test_combine_phrase_keywords_none() {
+            let target = Query::new("Ａ１ and Ａ２ or Ａ３".into());
+            let query = target
+                .combine_phrase_keywords(
+                    &vec![
+                        Query::new("否定的な連続キーワード１".into()),
+                        Query::new("否定的な連続キーワード２".into()),
+                    ],
+                    &vec![
+                        Query::new("連続キーワード１".into()),
+                        Query::new("連続キーワード２".into()),
+                    ],
+                )
+                .unwrap();
+            assert_eq!(query, Query::new("Ａ１ and Ａ２ or Ａ３".into()))
+        }
+
+        #[test]
+        fn test_combine_phrase_keywords_multi_phrase_keywords_and_negative_phrase_keywords() {
+            let target = Query::new("Ａ１ ”PK:1” and ”NPK:1” Ａ２ ”PK:2” or ”NPK:2” Ａ３".into());
+            let query = target
+                .combine_phrase_keywords(
+                    &vec![
+                        Query::new("否定的な連続キーワード１".into()),
+                        Query::new("否定的な連続キーワード２".into()),
+                    ],
+                    &vec![
+                        Query::new("連続キーワード１".into()),
+                        Query::new("連続キーワード２".into()),
+                    ],
+                )
+                .unwrap();
+            assert_eq!(query,Query::new("Ａ１ \"連続キーワード１\" and -\"否定的な連続キーワード１\" Ａ２ \"連続キーワード２\" or -\"否定的な連続キーワード２\" Ａ３".into()))
+        }
+
+        #[test]
+        fn test_combine_phrase_keywords_not_exists() {
+            let target = Query::new("Ａ１ ”PK:1” and ”NPK:1” Ａ２ ”PK:2” or ”NPK:2” Ａ３".into());
+            let query = target
+                .combine_phrase_keywords(
+                    &vec![Query::new("否定的な連続キーワード１".into())],
+                    &vec![Query::new("連続キーワード１".into())],
+                )
+                .unwrap();
+            assert_eq!(
+                query,
+                Query::new(
+                    "Ａ１ \"連続キーワード１\" and -\"否定的な連続キーワード１\" Ａ２  or  Ａ３"
+                        .into()
+                )
             )
         }
     }
@@ -184,7 +420,7 @@ mod tests {
 
         #[test]
         fn test_query_to_condition_only_space() {
-            let target = Query::new("　   　".into());
+            let target = Query::new(" ".into());
             let actual = target.to_condition().unwrap();
             assert_eq!(actual, (false, Condition::None, false))
         }
@@ -198,7 +434,7 @@ mod tests {
 
         #[test]
         fn test_query_to_condition_only_one_phrase_keyword() {
-            let target = Query::new("\"ＡＡＡ　ＢＢＢ\"".into());
+            let target = Query::new("\"ＡＡＡ ＢＢＢ\"".into());
             let actual = target.to_condition().unwrap();
             assert_eq!(
                 actual,
@@ -212,13 +448,29 @@ mod tests {
 
         #[test]
         fn test_query_to_condition_only_one_phrase_keyword_include_special_word() {
-            let target = Query::new("\"　ＡＡＡ　and　-ＢＢＢ　or　ＣＣＣ　\"".into());
+            let target = Query::new("\" Ｐ１ and Ｐ２ -(Ｐ３ or Ｐ４) \"".into());
             let actual = target.to_condition().unwrap();
             assert_eq!(
                 actual,
                 (
                     false,
-                    Condition::PhraseKeyword(" ＡＡＡ and -ＢＢＢ or ＣＣＣ ".into()),
+                    Condition::PhraseKeyword(" Ｐ１ and Ｐ２ -(Ｐ３ or Ｐ４) ".into()),
+                    false
+                )
+            )
+        }
+
+        #[test]
+        fn test_query_to_condition_only_one_phrase_keyword_include_full_width_special_word() {
+            let target = Query::new("\"　Ｐ１　ａｎｄ　Ｐ２　−（Ｐ３　ｏｒ　Ｐ４）　\"".into());
+            let actual = target.to_condition().unwrap();
+            assert_eq!(
+                actual,
+                (
+                    false,
+                    Condition::PhraseKeyword(
+                        "　Ｐ１　ａｎｄ　Ｐ２　−（Ｐ３　ｏｒ　Ｐ４）　".into()
+                    ),
                     false
                 )
             )
@@ -226,7 +478,7 @@ mod tests {
 
         #[test]
         fn test_query_to_condition_ten_phrase_keywords() {
-            let target = Query::new("\"ＡＡＡ１\"　\"ＡＡＡ２\"　\"ＡＡＡ３\"　\"ＡＡＡ４\"　\"ＡＡＡ５\"　\"ＡＡＡ６\"　\"ＡＡＡ７\"　\"ＡＡＡ８\"　\"ＡＡＡ９\"　\"ＡＡＡ１０\"".into());
+            let target = Query::new("\"ＡＡＡ１\" \"ＡＡＡ２\" \"ＡＡＡ３\" \"ＡＡＡ４\" \"ＡＡＡ５\" \"ＡＡＡ６\" \"ＡＡＡ７\" \"ＡＡＡ８\" \"ＡＡＡ９\" \"ＡＡＡ１０\"".into());
             let actual = target.to_condition().unwrap();
             assert_eq!(
                 actual,
@@ -267,22 +519,8 @@ mod tests {
         }
 
         #[test]
-        fn test_query_to_condition_only_one_double_negative_keyword() {
-            let target = Query::new("--ＡＡＡ".into());
-            let actual = target.to_condition().unwrap();
-            assert_eq!(
-                actual,
-                (
-                    false,
-                    Condition::Negative(Box::new(Condition::Keyword("-ＡＡＡ".into()))),
-                    false
-                )
-            )
-        }
-
-        #[test]
         fn test_query_to_condition_only_one_negative_phrase_keyword() {
-            let target = Query::new("-\"ＡＡＡ　ＢＢＢ\"".into());
+            let target = Query::new("-\"ＡＡＡ ＢＢＢ\"".into());
             let actual = target.to_condition().unwrap();
             assert_eq!(
                 actual,
@@ -295,8 +533,42 @@ mod tests {
         }
 
         #[test]
+        fn test_query_to_condition_only_one_negative_phrase_keyword_include_special_word() {
+            let target = Query::new("-\" ＮＰ１ and ＮＰ２ -(ＮＰ３ or ＮＰ４) \"".into());
+            let actual = target.to_condition().unwrap();
+            assert_eq!(
+                actual,
+                (
+                    false,
+                    Condition::Negative(Box::new(Condition::PhraseKeyword(
+                        " ＮＰ１ and ＮＰ２ -(ＮＰ３ or ＮＰ４) ".into()
+                    ))),
+                    false
+                )
+            )
+        }
+
+        #[test]
+        fn test_query_to_condition_only_one_negative_phrase_keyword_include_full_width_special_word(
+        ) {
+            let target =
+                Query::new("-\"　ＮＰ１　ａｎｄ　ＮＰ２　−（ＮＰ３　ｏｒ　ＮＰ４）　\"".into());
+            let actual = target.to_condition().unwrap();
+            assert_eq!(
+                actual,
+                (
+                    false,
+                    Condition::Negative(Box::new(Condition::PhraseKeyword(
+                        "　ＮＰ１　ａｎｄ　ＮＰ２　−（ＮＰ３　ｏｒ　ＮＰ４）　".into()
+                    ))),
+                    false
+                )
+            )
+        }
+
+        #[test]
         fn test_query_to_condition_ten_negative_phrase_keywords() {
-            let target = Query::new("-\"ＡＡＡ１\"　-\"ＡＡＡ２\"　-\"ＡＡＡ３\"　-\"ＡＡＡ４\"　-\"ＡＡＡ５\"　-\"ＡＡＡ６\"　-\"ＡＡＡ７\"　-\"ＡＡＡ８\"　-\"ＡＡＡ９\"　-\"ＡＡＡ１０\"".into());
+            let target = Query::new("-\"ＡＡＡ１\" -\"ＡＡＡ２\" -\"ＡＡＡ３\" -\"ＡＡＡ４\" -\"ＡＡＡ５\" -\"ＡＡＡ６\" -\"ＡＡＡ７\" -\"ＡＡＡ８\" -\"ＡＡＡ９\" -\"ＡＡＡ１０\"".into());
             let actual = target.to_condition().unwrap();
             assert_eq!(
                 actual,
@@ -344,7 +616,7 @@ mod tests {
 
         #[test]
         fn test_query_to_condition_two_keywords() {
-            let target = Query::new("ＡＡＡ　ＢＢＢ".into());
+            let target = Query::new("ＡＡＡ ＢＢＢ".into());
             let actual = target.to_condition().unwrap();
             assert_eq!(
                 actual,
@@ -364,7 +636,7 @@ mod tests {
 
         #[test]
         fn test_query_to_condition_two_phrase_keywords() {
-            let target = Query::new("\"ＡＡＡ　ＢＢＢ\"　\"ＣＣＣ　ＤＤＤ\"".into());
+            let target = Query::new("\"ＡＡＡ ＢＢＢ\" \"ＣＣＣ ＤＤＤ\"".into());
             let actual = target.to_condition().unwrap();
             assert_eq!(
                 actual,
@@ -383,29 +655,8 @@ mod tests {
         }
 
         #[test]
-        fn test_query_to_condition_only_one_phrase_keyword_and_singular_quotation() {
-            let target = Query::new("\"ＡＡＡ　ＢＢＢ\"　\"ＣＣＣ　ＤＤＤ".into());
-            let actual = target.to_condition().unwrap();
-            assert_eq!(
-                actual,
-                (
-                    false,
-                    Condition::Operator(
-                        Operator::And,
-                        vec![
-                            Condition::PhraseKeyword("ＡＡＡ ＢＢＢ".into()),
-                            Condition::Keyword("\"ＣＣＣ".into()),
-                            Condition::Keyword("ＤＤＤ".into())
-                        ]
-                    ),
-                    false
-                )
-            )
-        }
-
-        #[test]
         fn test_query_to_condition_two_negative_keywords() {
-            let target = Query::new("-ＡＡＡ　-ＢＢＢ".into());
+            let target = Query::new("-ＡＡＡ -ＢＢＢ".into());
             let actual = target.to_condition().unwrap();
             assert_eq!(
                 actual,
@@ -425,7 +676,7 @@ mod tests {
 
         #[test]
         fn test_query_to_condition_two_negative_phrase_keywords() {
-            let target = Query::new("-\"ＡＡＡ　ＢＢＢ\"　-\"ＣＣＣ　ＤＤＤ\"".into());
+            let target = Query::new("-\"ＡＡＡ ＢＢＢ\" -\"ＣＣＣ ＤＤＤ\"".into());
             let actual = target.to_condition().unwrap();
             assert_eq!(
                 actual,
@@ -449,7 +700,7 @@ mod tests {
 
         #[test]
         fn test_query_to_condition_multi_keywords() {
-            let target = Query::new("ＡＡＡ　\"ＢＢＢ\"　-\"ＣＣＣ\"　-ＤＤＤ".into());
+            let target = Query::new("ＡＡＡ \"ＢＢＢ\" -\"ＣＣＣ\" -ＤＤＤ".into());
             let actual = target.to_condition().unwrap();
             assert_eq!(
                 actual,
@@ -502,7 +753,7 @@ mod tests {
 
         #[test]
         fn test_query_to_condition_two_keywords_with_or() {
-            let target = Query::new("ＡＡＡ or　ＢＢＢ".into());
+            let target = Query::new("ＡＡＡ or ＢＢＢ".into());
             let actual = target.to_condition().unwrap();
             assert_eq!(
                 actual,
@@ -522,7 +773,7 @@ mod tests {
 
         #[test]
         fn test_query_to_condition_two_phrase_keywords_with_or() {
-            let target = Query::new("\"ＡＡＡ　ＢＢＢ\" or　\"ＣＣＣ　ＤＤＤ\"".into());
+            let target = Query::new("\"ＡＡＡ ＢＢＢ\" or \"ＣＣＣ ＤＤＤ\"".into());
             let actual = target.to_condition().unwrap();
             assert_eq!(
                 actual,
@@ -542,7 +793,7 @@ mod tests {
 
         #[test]
         fn test_query_to_condition_two_negative_keywords_with_or() {
-            let target = Query::new("-ＡＡＡ or　-ＢＢＢ".into());
+            let target = Query::new("-ＡＡＡ or -ＢＢＢ".into());
             let actual = target.to_condition().unwrap();
             assert_eq!(
                 actual,
@@ -562,7 +813,7 @@ mod tests {
 
         #[test]
         fn test_query_to_condition_two_negative_phrase_keywords_with_or() {
-            let target = Query::new("-\"ＡＡＡ　ＢＢＢ\" or　-\"ＣＣＣ　ＤＤＤ\"".into());
+            let target = Query::new("-\"ＡＡＡ ＢＢＢ\" or -\"ＣＣＣ ＤＤＤ\"".into());
             let actual = target.to_condition().unwrap();
             assert_eq!(
                 actual,
@@ -586,7 +837,7 @@ mod tests {
 
         #[test]
         fn test_query_to_condition_two_keywords_with_double_or() {
-            let target = Query::new("ＡＡＡ　or　or　ＢＢＢ".into());
+            let target = Query::new("ＡＡＡ or or ＢＢＢ".into());
             let actual = target.to_condition().unwrap();
             assert_eq!(
                 actual,
@@ -606,7 +857,7 @@ mod tests {
 
         #[test]
         fn test_query_to_condition_two_keywords_with_and() {
-            let target = Query::new("ＡＡＡ and　ＢＢＢ".into());
+            let target = Query::new("ＡＡＡ and ＢＢＢ".into());
             let actual = target.to_condition().unwrap();
             assert_eq!(
                 actual,
@@ -626,7 +877,7 @@ mod tests {
 
         #[test]
         fn test_query_to_condition_two_phrase_keywords_with_and() {
-            let target = Query::new("\"ＡＡＡ　ＢＢＢ\" and　\"ＣＣＣ　ＤＤＤ\"".into());
+            let target = Query::new("\"ＡＡＡ ＢＢＢ\" and \"ＣＣＣ ＤＤＤ\"".into());
             let actual = target.to_condition().unwrap();
             assert_eq!(
                 actual,
@@ -646,7 +897,7 @@ mod tests {
 
         #[test]
         fn test_query_to_condition_two_negative_keywords_with_and() {
-            let target = Query::new("-ＡＡＡ and　-ＢＢＢ".into());
+            let target = Query::new("-ＡＡＡ and -ＢＢＢ".into());
             let actual = target.to_condition().unwrap();
             assert_eq!(
                 actual,
@@ -666,7 +917,7 @@ mod tests {
 
         #[test]
         fn test_query_to_condition_two_negative_phrase_keywords_with_and() {
-            let target = Query::new("-\"ＡＡＡ　ＢＢＢ\" and　-\"ＣＣＣ　ＤＤＤ\"".into());
+            let target = Query::new("-\"ＡＡＡ ＢＢＢ\" and -\"ＣＣＣ ＤＤＤ\"".into());
             let actual = target.to_condition().unwrap();
             assert_eq!(
                 actual,
@@ -690,7 +941,7 @@ mod tests {
 
         #[test]
         fn test_query_to_condition_two_keywords_with_double_and() {
-            let target = Query::new("ＡＡＡ　and　and　ＢＢＢ".into());
+            let target = Query::new("ＡＡＡ and and ＢＢＢ".into());
             let actual = target.to_condition().unwrap();
             assert_eq!(
                 actual,
@@ -711,7 +962,7 @@ mod tests {
         #[test]
         fn test_query_to_condition_multi_keywords_with_or_and() {
             let target = Query::new(
-                "ＡＡＡ and　ＢＢＢ or ＣＣＣ ＤＤＤ and ＥＥＥ or ＦＦＦ or ＧＧＧ ＨＨＨ".into(),
+                "ＡＡＡ and ＢＢＢ or ＣＣＣ ＤＤＤ and ＥＥＥ or ＦＦＦ or ＧＧＧ ＨＨＨ".into(),
             );
             let actual = target.to_condition().unwrap();
             assert_eq!(
@@ -753,7 +1004,7 @@ mod tests {
 
         #[test]
         fn test_query_to_condition_two_keywords_with_double_and_or() {
-            let target = Query::new("ＡＡＡ　and　or　and　or　ＢＢＢ".into());
+            let target = Query::new("ＡＡＡ and or and or ＢＢＢ".into());
             let actual = target.to_condition().unwrap();
             assert_eq!(
                 actual,
@@ -773,7 +1024,9 @@ mod tests {
 
         #[test]
         fn test_query_to_condition_and_or_in_phrase_keyword() {
-            let target = Query::new("ＡＡＡ　\"　and　ＢＢＢ　or　ＣＣＣ　and　\"　\"　or　ＤＤＤ　and　ＥＥＥ　or　\"　ＦＦＦ".into());
+            let target = Query::new(
+                "ＡＡＡ \" and ＢＢＢ or ＣＣＣ and \" \" or ＤＤＤ and ＥＥＥ or \" ＦＦＦ".into(),
+            );
             let actual = target.to_condition().unwrap();
             assert_eq!(
                 actual,
@@ -795,7 +1048,7 @@ mod tests {
 
         #[test]
         fn test_query_to_condition_full_pattern() {
-            let target = Query::new("　ＡＡＡ　　Ａｎｄ　-ＢＢＢ　ＡnＤ　ＣorＣ　　ｃｃｃ　Ｏr　　\"c1 and c2\"　　-\"c3 or c4\"　　ＤandＤ　anD　\"　ＥＥＥ　ＡNＤ　ＦＦＦ　\"　　ａnｄ　　-\"　ＧＧＧ　　oＲ　　ＨＨＨ　\"　　oＲ　　ＩＩＩ　and　".into());
+            let target = Query::new(" ＡＡＡ  Ａｎｄ -ＢＢＢ ＡnＤ ＣorＣ  ｃｃｃ Ｏr  \"c1 and c2\"  -\"c3 or c4\"  ＤandＤ anD \" Ｐ１ and Ｐ２ -(Ｐ３ or Ｐ４) \"  ａnｄ  -\" ＮＰ１ and ＮＰ２ -(ＮＰ３ or ＮＰ４) \"  oＲ  ＩＩＩ and ".into());
             let actual = target.to_condition().unwrap();
             assert_eq!(
                 actual,
@@ -823,9 +1076,11 @@ mod tests {
                                         "c3 or c4".into()
                                     ))),
                                     Condition::Keyword("ＤandＤ".into()),
-                                    Condition::PhraseKeyword(" ＥＥＥ ＡNＤ ＦＦＦ ".into()),
+                                    Condition::PhraseKeyword(
+                                        " Ｐ１ and Ｐ２ -(Ｐ３ or Ｐ４) ".into()
+                                    ),
                                     Condition::Negative(Box::new(Condition::PhraseKeyword(
-                                        " ＧＧＧ  oＲ  ＨＨＨ ".into()
+                                        " ＮＰ１ and ＮＰ２ -(ＮＰ３ or ＮＰ４) ".into()
                                     )))
                                 ]
                             ),
@@ -839,7 +1094,7 @@ mod tests {
 
         #[test]
         fn test_query_to_condition_start_end_with_and() {
-            let target = Query::new("and ＡＡＡ　ＢＢＢ and".into());
+            let target = Query::new("and ＡＡＡ ＢＢＢ and".into());
             let actual = target.to_condition().unwrap();
             assert_eq!(
                 actual,
@@ -859,7 +1114,7 @@ mod tests {
 
         #[test]
         fn test_query_to_condition_start_end_with_and_with_space() {
-            let target = Query::new(" and ＡＡＡ　ＢＢＢ and ".into());
+            let target = Query::new(" and ＡＡＡ ＢＢＢ and ".into());
             let actual = target.to_condition().unwrap();
             assert_eq!(
                 actual,
@@ -879,7 +1134,7 @@ mod tests {
 
         #[test]
         fn test_query_to_condition_start_end_with_or() {
-            let target = Query::new("or ＡＡＡ　ＢＢＢ or".into());
+            let target = Query::new("or ＡＡＡ ＢＢＢ or".into());
             let actual = target.to_condition().unwrap();
             assert_eq!(
                 actual,
@@ -899,7 +1154,7 @@ mod tests {
 
         #[test]
         fn test_query_to_condition_start_end_with_or_with_space() {
-            let target = Query::new(" or ＡＡＡ　ＢＢＢ or ".into());
+            let target = Query::new(" or ＡＡＡ ＢＢＢ or ".into());
             let actual = target.to_condition().unwrap();
             assert_eq!(
                 actual,

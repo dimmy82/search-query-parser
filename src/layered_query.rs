@@ -16,12 +16,17 @@ pub(crate) struct LayeredQueries(Vec<LayeredQuery>);
 
 impl LayeredQueries {
     pub(crate) fn parse(query: Query) -> Result<LayeredQueries> {
-        let query = query.normalize();
+        let (query, negative_phrase_keywords, phrase_keywords) = query
+            .normalize_double_quotation()
+            .extract_phrase_keywords()?;
+        let query = query.normalize_symbols_except_double_quotation();
         let mut bracket_queries = Vec::<Query>::new();
         let all_brackets_picked_query = Self::pick_layer_by_bracket(query, &mut bracket_queries)?;
         Ok(Self::combine_layered_query(
             all_brackets_picked_query,
             &bracket_queries,
+            &negative_phrase_keywords,
+            &phrase_keywords,
         )?)
     }
 
@@ -46,7 +51,10 @@ impl LayeredQueries {
         }
     }
 
-    fn combine_layered_query(query: Query, bracket_queries: &Vec<Query>) -> Result<LayeredQueries> {
+    fn combine_layered_query(
+        query: Query, bracket_queries: &Vec<Query>, negative_phrase_keywords: &Vec<Query>,
+        phrase_keywords: &Vec<Query>,
+    ) -> Result<LayeredQueries> {
         let regex_layered_by_bracket = Regex::new(r"([^（）]*)（(\d+)）")?;
         let mut layered_queries = Vec::<LayeredQuery>::new();
         let the_last_query_after_all_brackets = regex_layered_by_bracket
@@ -57,17 +65,27 @@ impl LayeredQueries {
                         is_negative_bracket = true;
                         q = Query::new(String::from(&q.value_ref()[0..q.value_ref().len() - 1]))
                     }
-                    if q.is_not_blank() {
-                        layered_queries.push(LayeredQuery::Query(q))
-                    }
+                    let _ = q
+                        .combine_phrase_keywords(negative_phrase_keywords, phrase_keywords)
+                        .map(|q| {
+                            if q.is_not_blank() {
+                                layered_queries.push(LayeredQuery::Query(q))
+                            }
+                        });
                 });
                 regex_match_number(captures.get(2), |i| {
                     bracket_queries.get(i - 1).map(|q| {
-                        Self::combine_layered_query(q.clone(), bracket_queries).map(|v| {
+                        Self::combine_layered_query(
+                            q.clone(),
+                            bracket_queries,
+                            negative_phrase_keywords,
+                            phrase_keywords,
+                        )
+                        .map(|lqs| {
                             layered_queries.push(if is_negative_bracket {
-                                LayeredQuery::NegativeBracket(v)
+                                LayeredQuery::NegativeBracket(lqs)
                             } else {
-                                LayeredQuery::Bracket(v)
+                                LayeredQuery::Bracket(lqs)
                             })
                         })
                     })
@@ -75,7 +93,8 @@ impl LayeredQueries {
                 String::from("")
             })
             .to_string();
-        let the_last_query = Query::new(the_last_query_after_all_brackets);
+        let the_last_query = Query::new(the_last_query_after_all_brackets)
+            .combine_phrase_keywords(negative_phrase_keywords, phrase_keywords)?;
         if the_last_query.is_not_blank() {
             layered_queries.push(LayeredQuery::Query(the_last_query))
         }
@@ -158,12 +177,6 @@ mod tests {
     use super::*;
     use crate::query::Query;
 
-    impl Query {
-        fn new_with_normalize(value: String) -> Self {
-            Self::new(value).normalize()
-        }
-    }
-
     mod test_parse {
         use super::*;
 
@@ -174,9 +187,10 @@ mod tests {
                     .into(),
             );
             assert_eq!(
-                LayeredQueries::parse(query.clone()).unwrap(),
-                LayeredQueries(vec![LayeredQuery::Query(Query::new_with_normalize(
-                    query.value()
+                LayeredQueries::parse(query).unwrap(),
+                LayeredQueries(vec![LayeredQuery::Query(Query::new(
+                    " ＡＡＡ  \"１１１　ＣＣＣ\"  -ＤＤＤ or エエエ and ＦＦＦ  -\"あああ　いいい\" "
+                        .into()
                 ))])
             )
         }
@@ -188,17 +202,13 @@ mod tests {
                     .into(),
             );
             assert_eq!(
-                LayeredQueries::parse(query.clone()).unwrap(),
+                LayeredQueries::parse(query).unwrap(),
                 LayeredQueries(vec![
-                    LayeredQuery::Query(Query::new_with_normalize(
-                        "　ＡＡＡ　”１１１　ＣＣＣ”　".into()
-                    )),
-                    LayeredQuery::Bracket(LayeredQueries(vec![LayeredQuery::Query(
-                        Query::new_with_normalize("-ＤＤＤ　or　エエエ".into())
-                    )])),
-                    LayeredQuery::Query(Query::new_with_normalize(
-                        "　and　ＦＦＦ　-”あああ　いいい”".into()
-                    ))
+                    LayeredQuery::Query(Query::new(" ＡＡＡ  \"１１１　ＣＣＣ\"  ".into())),
+                    LayeredQuery::Bracket(LayeredQueries(vec![LayeredQuery::Query(Query::new(
+                        "-ＤＤＤ or エエエ".into()
+                    ))])),
+                    LayeredQuery::Query(Query::new(" and ＦＦＦ  -\"あああ　いいい\" ".into()))
                 ])
             )
         }
@@ -210,17 +220,13 @@ mod tests {
                     .into(),
             );
             assert_eq!(
-                LayeredQueries::parse(query.clone()).unwrap(),
+                LayeredQueries::parse(query).unwrap(),
                 LayeredQueries(vec![
-                    LayeredQuery::Query(Query::new_with_normalize(
-                        "　ＡＡＡ　”１１１　ＣＣＣ”　".into()
-                    )),
+                    LayeredQuery::Query(Query::new(" ＡＡＡ  \"１１１　ＣＣＣ\"  ".into())),
                     LayeredQuery::NegativeBracket(LayeredQueries(vec![LayeredQuery::Query(
-                        Query::new_with_normalize("ＤＤＤ　or　エエエ".into())
+                        Query::new("ＤＤＤ or エエエ".into())
                     )])),
-                    LayeredQuery::Query(Query::new_with_normalize(
-                        "　and　ＦＦＦ　-”あああ　いいい”".into()
-                    ))
+                    LayeredQuery::Query(Query::new(" and ＦＦＦ  -\"あああ　いいい\" ".into()))
                 ])
             )
         }
@@ -232,18 +238,18 @@ mod tests {
                     .into(),
             );
             assert_eq!(
-                LayeredQueries::parse(query.clone()).unwrap(),
+                LayeredQueries::parse(query).unwrap(),
                 LayeredQueries(vec![
-                    LayeredQuery::Bracket(LayeredQueries(vec![LayeredQuery::Query(
-                        Query::new_with_normalize("　ＡＡＡ　”１１１　ＣＣＣ”".into())
-                    )])),
-                    LayeredQuery::Bracket(LayeredQueries(vec![LayeredQuery::Query(
-                        Query::new_with_normalize("-ＤＤＤ　or　エエエ".into())
-                    )])),
-                    LayeredQuery::Query(Query::new_with_normalize("　and　".into())),
-                    LayeredQuery::Bracket(LayeredQueries(vec![LayeredQuery::Query(
-                        Query::new_with_normalize("ＦＦＦ　-”あああ　いいい”".into())
-                    )]))
+                    LayeredQuery::Bracket(LayeredQueries(vec![LayeredQuery::Query(Query::new(
+                        " ＡＡＡ  \"１１１　ＣＣＣ\" ".into()
+                    ))])),
+                    LayeredQuery::Bracket(LayeredQueries(vec![LayeredQuery::Query(Query::new(
+                        "-ＤＤＤ or エエエ".into()
+                    ))])),
+                    LayeredQuery::Query(Query::new(" and ".into())),
+                    LayeredQuery::Bracket(LayeredQueries(vec![LayeredQuery::Query(Query::new(
+                        "ＦＦＦ  -\"あああ　いいい\" ".into()
+                    ))]))
                 ])
             )
         }
@@ -255,18 +261,18 @@ mod tests {
                     .into(),
             );
             assert_eq!(
-                LayeredQueries::parse(query.clone()).unwrap(),
+                LayeredQueries::parse(query).unwrap(),
                 LayeredQueries(vec![
-                    LayeredQuery::Bracket(LayeredQueries(vec![LayeredQuery::Query(
-                        Query::new_with_normalize("　ＡＡＡ　”１１１　ＣＣＣ”".into())
-                    )])),
+                    LayeredQuery::Bracket(LayeredQueries(vec![LayeredQuery::Query(Query::new(
+                        " ＡＡＡ  \"１１１　ＣＣＣ\" ".into()
+                    ))])),
                     LayeredQuery::NegativeBracket(LayeredQueries(vec![LayeredQuery::Query(
-                        Query::new_with_normalize("ＤＤＤ　or　エエエ".into())
+                        Query::new("ＤＤＤ or エエエ".into())
                     )])),
-                    LayeredQuery::Query(Query::new_with_normalize("　and　".into())),
-                    LayeredQuery::Bracket(LayeredQueries(vec![LayeredQuery::Query(
-                        Query::new_with_normalize("ＦＦＦ　-”あああ　いいい”".into())
-                    )]))
+                    LayeredQuery::Query(Query::new(" and ".into())),
+                    LayeredQuery::Bracket(LayeredQueries(vec![LayeredQuery::Query(Query::new(
+                        "ＦＦＦ  -\"あああ　いいい\" ".into()
+                    ))]))
                 ])
             )
         }
@@ -278,23 +284,19 @@ mod tests {
                     .into(),
             );
             assert_eq!(
-                LayeredQueries::parse(query.clone()).unwrap(),
+                LayeredQueries::parse(query).unwrap(),
                 LayeredQueries(vec![
-                    LayeredQuery::Query(Query::new_with_normalize("　ＡＡＡ　".into())),
+                    LayeredQuery::Query(Query::new(" ＡＡＡ ".into())),
                     LayeredQuery::Bracket(LayeredQueries(vec![
-                        LayeredQuery::Query(Query::new_with_normalize(
-                            "”１１１　ＣＣＣ”　or　".into()
-                        )),
+                        LayeredQuery::Query(Query::new(" \"１１１　ＣＣＣ\"  or ".into())),
                         LayeredQuery::Bracket(LayeredQueries(vec![
                             LayeredQuery::Bracket(LayeredQueries(vec![LayeredQuery::Query(
-                                Query::new_with_normalize(
-                                    "エエエ　or　ＦＦＦ　-”あああ　いいい”".into()
-                                )
+                                Query::new("エエエ or ＦＦＦ  -\"あああ　いいい\" ".into())
                             )])),
-                            LayeredQuery::Query(Query::new_with_normalize("　and　-ＤＤＤ".into()))
+                            LayeredQuery::Query(Query::new(" and -ＤＤＤ".into()))
                         ]))
                     ])),
-                    LayeredQuery::Query(Query::new_with_normalize("　and　ＥＥＥ".into())),
+                    LayeredQuery::Query(Query::new(" and ＥＥＥ".into())),
                 ])
             )
         }
@@ -306,26 +308,24 @@ mod tests {
                     .into(),
             );
             assert_eq!(
-                LayeredQueries::parse(query.clone()).unwrap(),
+                LayeredQueries::parse(query).unwrap(),
                 LayeredQueries(vec![
-                    LayeredQuery::Query(Query::new_with_normalize("　ＡＡＡ　".into())),
+                    LayeredQuery::Query(Query::new(" ＡＡＡ ".into())),
                     LayeredQuery::NegativeBracket(LayeredQueries(vec![
-                        LayeredQuery::Query(Query::new_with_normalize(
-                            "”１１１　ＣＣＣ”　or　".into()
-                        )),
+                        LayeredQuery::Query(Query::new(" \"１１１　ＣＣＣ\"  or ".into())),
                         LayeredQuery::Bracket(LayeredQueries(vec![
                             LayeredQuery::NegativeBracket(LayeredQueries(vec![
-                                LayeredQuery::Query(Query::new_with_normalize(
-                                    "エエエ　or　ＦＦＦ　-”あああ　いいい”".into()
+                                LayeredQuery::Query(Query::new(
+                                    "エエエ or ＦＦＦ  -\"あああ　いいい\" ".into()
                                 ))
                             ])),
-                            LayeredQuery::Query(Query::new_with_normalize("　and　".into())),
+                            LayeredQuery::Query(Query::new(" and ".into())),
                             LayeredQuery::Bracket(LayeredQueries(vec![LayeredQuery::Query(
-                                Query::new_with_normalize("-ＤＤＤ or -ＥＥＥ".into())
+                                Query::new("-ＤＤＤ or -ＥＥＥ".into())
                             )]))
                         ]))
                     ])),
-                    LayeredQuery::Query(Query::new_with_normalize("　and　ＦＦＦ".into())),
+                    LayeredQuery::Query(Query::new(" and ＦＦＦ".into())),
                 ])
             )
         }
@@ -337,30 +337,28 @@ mod tests {
             assert_eq!(
                 LayeredQueries::parse(query).unwrap(),
                 LayeredQueries(vec![
-                    LayeredQuery::Query(Query::new_with_normalize(" ＡＡＡ ".into())),
+                    LayeredQuery::Query(Query::new(" ＡＡＡ ".into())),
                     LayeredQuery::Bracket(LayeredQueries(vec![
-                        LayeredQuery::Query(Query::new_with_normalize("\"１１１ ＣＣＣ\" ".into())),
+                        LayeredQuery::Query(Query::new(" \"１１１　ＣＣＣ\"  ".into())),
                         LayeredQuery::Bracket(LayeredQueries(vec![
                             LayeredQuery::NegativeBracket(LayeredQueries(vec![
-                                LayeredQuery::Query(Query::new_with_normalize(
-                                    " ＤＤＤ エエエ ".into()
-                                )),
+                                LayeredQuery::Query(Query::new(" ＤＤＤ エエエ ".into())),
                             ])),
-                            LayeredQuery::Query(Query::new_with_normalize(" ＦＦＦ".into())),
+                            LayeredQuery::Query(Query::new(" ＦＦＦ".into())),
                         ])),
-                        LayeredQuery::Query(Query::new_with_normalize(" ＧＧＧ ".into())),
+                        LayeredQuery::Query(Query::new(" ＧＧＧ ".into())),
                         LayeredQuery::Bracket(LayeredQueries(vec![LayeredQuery::Query(
-                            Query::new_with_normalize("ＨＨＨ -\"あああ いいい\" ううう".into())
+                            Query::new("ＨＨＨ  -\"あああ　いいい\"  ううう".into())
                         ),]))
                     ])),
-                    LayeredQuery::Query(Query::new_with_normalize(" \" ＪＪＪ \" ".into())),
+                    LayeredQuery::Query(Query::new("  \"　ＪＪＪ　\"  ".into())),
                     LayeredQuery::NegativeBracket(LayeredQueries(vec![LayeredQuery::Query(
-                        Query::new_with_normalize("ＫＫＫ  ＬＬＬ".into())
+                        Query::new("ＫＫＫ  ＬＬＬ".into())
                     ),])),
-                    LayeredQuery::Bracket(LayeredQueries(vec![LayeredQuery::Query(
-                        Query::new_with_normalize("ＭＭＭ".into())
-                    ),])),
-                    LayeredQuery::Query(Query::new_with_normalize(" ２２２ ".into())),
+                    LayeredQuery::Bracket(LayeredQueries(vec![LayeredQuery::Query(Query::new(
+                        "ＭＭＭ".into()
+                    )),])),
+                    LayeredQuery::Query(Query::new(" ２２２ ".into())),
                 ])
             )
         }
@@ -372,17 +370,13 @@ mod tests {
                     .into(),
             );
             assert_eq!(
-                LayeredQueries::parse(query.clone()).unwrap(),
+                LayeredQueries::parse(query).unwrap(),
                 LayeredQueries(vec![
-                    LayeredQuery::Query(Query::new_with_normalize(
-                        "　ＡＡＡ　　”１１１　ＣＣＣ”　".into()
-                    )),
-                    LayeredQuery::Bracket(LayeredQueries(vec![LayeredQuery::Query(
-                        Query::new_with_normalize("-ＤＤＤ　or　エエエ".into())
-                    )])),
-                    LayeredQuery::Query(Query::new_with_normalize(
-                        "　and　ＦＦＦ　　-”あああ　いいい”".into()
-                    ))
+                    LayeredQuery::Query(Query::new(" ＡＡＡ   \"１１１　ＣＣＣ\"  ".into())),
+                    LayeredQuery::Bracket(LayeredQueries(vec![LayeredQuery::Query(Query::new(
+                        "-ＤＤＤ or エエエ".into()
+                    ))])),
+                    LayeredQuery::Query(Query::new(" and ＦＦＦ   -\"あああ　いいい\" ".into()))
                 ])
             )
         }
@@ -394,10 +388,9 @@ mod tests {
                     .into(),
             );
             assert_eq!(
-                LayeredQueries::parse(query.clone()).unwrap(),
-                LayeredQueries(vec![LayeredQuery::Query(Query::new_with_normalize(
-                    query.value()
-                ))])
+                LayeredQueries::parse(query).unwrap(),
+                LayeredQueries(vec![LayeredQuery::Query(Query::new(" ＡＡＡ  \"１１１　ＣＣＣ\"  -(ＤＤＤ or エエエ and ( ＦＦＦ  -\"あああ　いいい\" "
+                    .into()))])
             )
         }
 
@@ -408,10 +401,9 @@ mod tests {
                     .into(),
             );
             assert_eq!(
-                LayeredQueries::parse(query.clone()).unwrap(),
-                LayeredQueries(vec![LayeredQuery::Query(Query::new_with_normalize(
-                    query.value()
-                ))])
+                LayeredQueries::parse(query).unwrap(),
+                LayeredQueries(vec![LayeredQuery::Query(Query::new(" ＡＡＡ  \"１１１　ＣＣＣ\" ) -ＤＤＤ or エエエ ) and ＦＦＦ  -\"あああ　いいい\" "
+                    .into()))])
             )
         }
 
@@ -422,17 +414,13 @@ mod tests {
                     .into(),
             );
             assert_eq!(
-                LayeredQueries::parse(query.clone()).unwrap(),
+                LayeredQueries::parse(query).unwrap(),
                 LayeredQueries(vec![
-                    LayeredQuery::Query(Query::new_with_normalize(
-                        "　ＡＡＡ　（”１１１　ＣＣＣ”　".into()
-                    )),
-                    LayeredQuery::Bracket(LayeredQueries(vec![LayeredQuery::Query(
-                        Query::new_with_normalize("ＤＤＤ　or　エエエ".into())
-                    )])),
-                    LayeredQuery::Query(Query::new_with_normalize(
-                        "　and　（　ＦＦＦ　-”あああ　いいい”".into()
-                    ))
+                    LayeredQuery::Query(Query::new(" ＡＡＡ ( \"１１１　ＣＣＣ\"  ".into())),
+                    LayeredQuery::Bracket(LayeredQueries(vec![LayeredQuery::Query(Query::new(
+                        "ＤＤＤ or エエエ".into()
+                    ))])),
+                    LayeredQuery::Query(Query::new(" and ( ＦＦＦ  -\"あああ　いいい\" ".into()))
                 ])
             )
         }
@@ -444,17 +432,13 @@ mod tests {
                     .into(),
             );
             assert_eq!(
-                LayeredQueries::parse(query.clone()).unwrap(),
+                LayeredQueries::parse(query).unwrap(),
                 LayeredQueries(vec![
-                    LayeredQuery::Query(Query::new_with_normalize(
-                        "　ＡＡＡ）　”１１１　ＣＣＣ”　".into()
-                    )),
-                    LayeredQuery::Bracket(LayeredQueries(vec![LayeredQuery::Query(
-                        Query::new_with_normalize("ＤＤＤ　or　エエエ".into())
-                    )])),
-                    LayeredQuery::Query(Query::new_with_normalize(
-                        "　and　）　ＦＦＦ　-”あああ　いいい”".into()
-                    ))
+                    LayeredQuery::Query(Query::new(" ＡＡＡ)  \"１１１　ＣＣＣ\"  ".into())),
+                    LayeredQuery::Bracket(LayeredQueries(vec![LayeredQuery::Query(Query::new(
+                        "ＤＤＤ or エエエ".into()
+                    ))])),
+                    LayeredQuery::Query(Query::new(" and ) ＦＦＦ  -\"あああ　いいい\" ".into()))
                 ])
             )
         }
@@ -466,17 +450,56 @@ mod tests {
                     .into(),
             );
             assert_eq!(
-                LayeredQueries::parse(query.clone()).unwrap(),
+                LayeredQueries::parse(query).unwrap(),
                 LayeredQueries(vec![
-                    LayeredQuery::Query(Query::new_with_normalize(
-                        "　ＡＡＡ）　”１１１　ＣＣＣ”　".into()
-                    )),
-                    LayeredQuery::Bracket(LayeredQueries(vec![LayeredQuery::Query(
-                        Query::new_with_normalize("ＤＤＤ　or　エエエ".into())
+                    LayeredQuery::Query(Query::new(" ＡＡＡ)  \"１１１　ＣＣＣ\"  ".into())),
+                    LayeredQuery::Bracket(LayeredQueries(vec![LayeredQuery::Query(Query::new(
+                        "ＤＤＤ or エエエ".into()
+                    ))])),
+                    LayeredQuery::Query(Query::new(" and ( ＦＦＦ  -\"あああ　いいい\" ".into()))
+                ])
+            )
+        }
+
+        #[test]
+        fn test_parse_bracket_in_phrase_keywords() {
+            let query = Query::new(
+                "-（Ａ１　or　\" Ｐ１ and Ｐ２ -(Ｐ３ or Ｐ４) \"）　and　（-\" ＮＰ１ and ＮＰ２ -(ＮＰ３ or ＮＰ４) \"　or　Ａ２）"
+                    .into(),
+            );
+            assert_eq!(
+                LayeredQueries::parse(query).unwrap(),
+                LayeredQueries(vec![
+                    LayeredQuery::NegativeBracket(LayeredQueries(vec![LayeredQuery::Query(
+                        Query::new("Ａ１ or  \" Ｐ１ and Ｐ２ -(Ｐ３ or Ｐ４) \" ".into())
                     )])),
-                    LayeredQuery::Query(Query::new_with_normalize(
-                        "　and　（　ＦＦＦ　-”あああ　いいい”".into()
-                    ))
+                    LayeredQuery::Query(Query::new(" and ".into())),
+                    LayeredQuery::Bracket(LayeredQueries(vec![LayeredQuery::Query(Query::new(
+                        " -\" ＮＰ１ and ＮＰ２ -(ＮＰ３ or ＮＰ４) \"  or Ａ２".into()
+                    ))]))
+                ])
+            )
+        }
+
+        #[test]
+        fn test_parse_full_width_bracket_in_phrase_keywords() {
+            let query = Query::new(
+                "-（Ａ１　or　”　Ｐ１　ａｎｄ　Ｐ２　−（Ｐ３　ｏｒ　Ｐ４）　”）　and　（-”　ＮＰ１　ａｎｄ　ＮＰ２　−（ＮＰ３　ｏｒ　ＮＰ４）　”　or　Ａ２）"
+                    .into(),
+            );
+            assert_eq!(
+                LayeredQueries::parse(query).unwrap(),
+                LayeredQueries(vec![
+                    LayeredQuery::NegativeBracket(LayeredQueries(vec![LayeredQuery::Query(
+                        Query::new(
+                            "Ａ１ or  \"　Ｐ１　ａｎｄ　Ｐ２　−（Ｐ３　ｏｒ　Ｐ４）　\" ".into()
+                        )
+                    )])),
+                    LayeredQuery::Query(Query::new(" and ".into())),
+                    LayeredQuery::Bracket(LayeredQueries(vec![LayeredQuery::Query(Query::new(
+                        " -\"　ＮＰ１　ａｎｄ　ＮＰ２　−（ＮＰ３　ｏｒ　ＮＰ４）　\"  or Ａ２"
+                            .into()
+                    ))]))
                 ])
             )
         }
@@ -803,6 +826,55 @@ mod tests {
         }
 
         #[test]
+        fn test_layered_queries_parse_to_condition_bracket_in_phrase_keywords() {
+            let query = Query::new(
+                " (検索１ and -検索２) or ((\" Ｐ１ and Ｐ２ -(Ｐ３ or Ｐ４) \" or -\" ＮＰ１ and ＮＰ２ -(ＮＰ３ or ＮＰ４) \") and (\" 検索５ 検索６ \" or 検索７)) "
+                    .into(),
+            );
+            assert_eq!(
+                LayeredQueries::parse(query)
+                    .unwrap()
+                    .to_condition()
+                    .unwrap(),
+                Condition::Operator(
+                    Operator::Or,
+                    vec![
+                        Condition::Operator(
+                            Operator::And,
+                            vec![
+                                Condition::Keyword("検索１".into()),
+                                Condition::Negative(Box::new(Condition::Keyword("検索２".into()))),
+                            ]
+                        ),
+                        Condition::Operator(
+                            Operator::And,
+                            vec![
+                                Condition::Operator(
+                                    Operator::Or,
+                                    vec![
+                                        Condition::PhraseKeyword(
+                                            " Ｐ１ and Ｐ２ -(Ｐ３ or Ｐ４) ".into()
+                                        ),
+                                        Condition::Negative(Box::new(Condition::PhraseKeyword(
+                                            " ＮＰ１ and ＮＰ２ -(ＮＰ３ or ＮＰ４) ".into()
+                                        )))
+                                    ]
+                                ),
+                                Condition::Operator(
+                                    Operator::Or,
+                                    vec![
+                                        Condition::PhraseKeyword(" 検索５ 検索６ ".into()),
+                                        Condition::Keyword("検索７".into())
+                                    ]
+                                )
+                            ]
+                        ),
+                    ]
+                )
+            )
+        }
+
+        #[test]
         fn test_layered_queries_parse_to_condition_unnecessary_nested_brackets() {
             let query = Query::new(
                 " ((検索１ and -検索２)) or (((((\"検索３\" or -\"検索４\"))) and ((((\" 検索５ 検索６ \" or 検索７)))))) "
@@ -868,7 +940,7 @@ mod tests {
                                 Condition::Operator(
                                     Operator::Or,
                                     vec![
-                                        Condition::PhraseKeyword("１１１ ＣＣＣ".into()),
+                                        Condition::PhraseKeyword("１１１　ＣＣＣ".into()),
                                         Condition::Operator(
                                             Operator::And,
                                             vec![
@@ -895,7 +967,7 @@ mod tests {
                                                             vec![
                                                                 Condition::Negative(Box::new(
                                                                     Condition::PhraseKeyword(
-                                                                        "あああ いいい".into()
+                                                                        "あああ　いいい".into()
                                                                     )
                                                                 )),
                                                                 Condition::Keyword("ううう".into()),
@@ -907,7 +979,7 @@ mod tests {
                                         )
                                     ]
                                 ),
-                                Condition::PhraseKeyword(" ＪＪＪ ".into())
+                                Condition::PhraseKeyword("　ＪＪＪ　".into())
                             ]
                         ),
                         Condition::Operator(
