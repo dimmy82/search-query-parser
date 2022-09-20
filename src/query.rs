@@ -36,6 +36,10 @@ impl Query {
         Self(self.value().replace("\"", ""))
     }
 
+    pub(crate) fn remove_bracket(self) -> Self {
+        Self(self.value().replace("(", "").replace(")", ""))
+    }
+
     pub(crate) fn is_not_blank(&self) -> bool {
         self.value_ref().replace(" ", "").is_empty() == false
     }

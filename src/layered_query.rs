@@ -47,7 +47,7 @@ impl LayeredQueries {
         );
         match query == innermost_bracket_removed_query {
             false => Self::pick_layer_by_bracket(innermost_bracket_removed_query, bracket_queries),
-            true => Ok(query),
+            true => Ok(query.remove_bracket()),
         }
     }
 
@@ -389,7 +389,7 @@ mod tests {
             );
             assert_eq!(
                 LayeredQueries::parse(query).unwrap(),
-                LayeredQueries(vec![LayeredQuery::Query(Query::new(" ＡＡＡ  \"１１１　ＣＣＣ\"  -(ＤＤＤ or エエエ and ( ＦＦＦ  -\"あああ　いいい\" "
+                LayeredQueries(vec![LayeredQuery::Query(Query::new(" ＡＡＡ  \"１１１　ＣＣＣ\"  -ＤＤＤ or エエエ and  ＦＦＦ  -\"あああ　いいい\" "
                     .into()))])
             )
         }
@@ -402,7 +402,7 @@ mod tests {
             );
             assert_eq!(
                 LayeredQueries::parse(query).unwrap(),
-                LayeredQueries(vec![LayeredQuery::Query(Query::new(" ＡＡＡ  \"１１１　ＣＣＣ\" ) -ＤＤＤ or エエエ ) and ＦＦＦ  -\"あああ　いいい\" "
+                LayeredQueries(vec![LayeredQuery::Query(Query::new(" ＡＡＡ  \"１１１　ＣＣＣ\"  -ＤＤＤ or エエエ  and ＦＦＦ  -\"あああ　いいい\" "
                     .into()))])
             )
         }
@@ -416,11 +416,11 @@ mod tests {
             assert_eq!(
                 LayeredQueries::parse(query).unwrap(),
                 LayeredQueries(vec![
-                    LayeredQuery::Query(Query::new(" ＡＡＡ ( \"１１１　ＣＣＣ\"  ".into())),
+                    LayeredQuery::Query(Query::new(" ＡＡＡ  \"１１１　ＣＣＣ\"  ".into())),
                     LayeredQuery::Bracket(LayeredQueries(vec![LayeredQuery::Query(Query::new(
                         "ＤＤＤ or エエエ".into()
                     ))])),
-                    LayeredQuery::Query(Query::new(" and ( ＦＦＦ  -\"あああ　いいい\" ".into()))
+                    LayeredQuery::Query(Query::new(" and  ＦＦＦ  -\"あああ　いいい\" ".into()))
                 ])
             )
         }
@@ -434,11 +434,11 @@ mod tests {
             assert_eq!(
                 LayeredQueries::parse(query).unwrap(),
                 LayeredQueries(vec![
-                    LayeredQuery::Query(Query::new(" ＡＡＡ)  \"１１１　ＣＣＣ\"  ".into())),
+                    LayeredQuery::Query(Query::new(" ＡＡＡ  \"１１１　ＣＣＣ\"  ".into())),
                     LayeredQuery::Bracket(LayeredQueries(vec![LayeredQuery::Query(Query::new(
                         "ＤＤＤ or エエエ".into()
                     ))])),
-                    LayeredQuery::Query(Query::new(" and ) ＦＦＦ  -\"あああ　いいい\" ".into()))
+                    LayeredQuery::Query(Query::new(" and  ＦＦＦ  -\"あああ　いいい\" ".into()))
                 ])
             )
         }
@@ -452,11 +452,11 @@ mod tests {
             assert_eq!(
                 LayeredQueries::parse(query).unwrap(),
                 LayeredQueries(vec![
-                    LayeredQuery::Query(Query::new(" ＡＡＡ)  \"１１１　ＣＣＣ\"  ".into())),
+                    LayeredQuery::Query(Query::new(" ＡＡＡ  \"１１１　ＣＣＣ\"  ".into())),
                     LayeredQuery::Bracket(LayeredQueries(vec![LayeredQuery::Query(Query::new(
                         "ＤＤＤ or エエエ".into()
                     ))])),
-                    LayeredQuery::Query(Query::new(" and ( ＦＦＦ  -\"あああ　いいい\" ".into()))
+                    LayeredQuery::Query(Query::new(" and  ＦＦＦ  -\"あああ　いいい\" ".into()))
                 ])
             )
         }
@@ -777,7 +777,7 @@ mod tests {
         #[test]
         fn test_layered_queries_parse_to_condition_nested_brackets() {
             let query = Query::new(
-                " (検索１ and -検索２) or ((\"検索３\" or -\"検索４\") and (\" 検索５ 検索６ \" or 検索７)) "
+                " (keyword１ and -keyword２) or ((\"phrase keyword １\" or -\"phrase keyword ２\") and -(\" a long phrase keyword \" or keyword３)) "
                     .into(),
             );
             assert_eq!(
@@ -791,8 +791,8 @@ mod tests {
                         Condition::Operator(
                             Operator::And,
                             vec![
-                                Condition::Keyword("検索１".into()),
-                                Condition::Not(Box::new(Condition::Keyword("検索２".into()))),
+                                Condition::Keyword("keyword１".into()),
+                                Condition::Not(Box::new(Condition::Keyword("keyword２".into()))),
                             ]
                         ),
                         Condition::Operator(
@@ -801,19 +801,19 @@ mod tests {
                                 Condition::Operator(
                                     Operator::Or,
                                     vec![
-                                        Condition::PhraseKeyword("検索３".into()),
+                                        Condition::PhraseKeyword("phrase keyword １".into()),
                                         Condition::Not(Box::new(Condition::PhraseKeyword(
-                                            "検索４".into()
+                                            "phrase keyword ２".into()
                                         )))
                                     ]
                                 ),
-                                Condition::Operator(
+                                Condition::Not(Box::new(Condition::Operator(
                                     Operator::Or,
                                     vec![
-                                        Condition::PhraseKeyword(" 検索５ 検索６ ".into()),
-                                        Condition::Keyword("検索７".into())
+                                        Condition::PhraseKeyword(" a long phrase keyword ".into()),
+                                        Condition::Keyword("keyword３".into())
                                     ]
-                                )
+                                )))
                             ]
                         ),
                     ]
