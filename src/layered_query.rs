@@ -128,7 +128,7 @@ impl LayeredQueries {
                 LayeredQuery::NegativeBracket(layered_queries) => {
                     let condition = layered_queries.to_condition()?;
                     query_string.push_str(format!(" {} ", conditions.len()).as_str());
-                    conditions.push(Condition::Negative(Box::new(condition)));
+                    conditions.push(Condition::Not(Box::new(condition)));
                 }
             }
         }
@@ -564,7 +564,7 @@ mod tests {
                     .unwrap()
                     .to_condition()
                     .unwrap(),
-                Condition::Negative(Box::new(Condition::Keyword("検索".into())))
+                Condition::Not(Box::new(Condition::Keyword("検索".into())))
             )
         }
 
@@ -576,7 +576,7 @@ mod tests {
                     .unwrap()
                     .to_condition()
                     .unwrap(),
-                Condition::Negative(Box::new(Condition::PhraseKeyword("検索".into())))
+                Condition::Not(Box::new(Condition::PhraseKeyword("検索".into())))
             )
         }
 
@@ -592,9 +592,9 @@ mod tests {
                     Operator::And,
                     vec![
                         Condition::Keyword("検索１".into()),
-                        Condition::Negative(Box::new(Condition::Keyword("検索２".into()))),
+                        Condition::Not(Box::new(Condition::Keyword("検索２".into()))),
                         Condition::PhraseKeyword("検索３".into()),
-                        Condition::Negative(Box::new(Condition::PhraseKeyword("検索４".into())))
+                        Condition::Not(Box::new(Condition::PhraseKeyword("検索４".into())))
                     ]
                 )
             )
@@ -612,9 +612,9 @@ mod tests {
                     Operator::And,
                     vec![
                         Condition::Keyword("検索１".into()),
-                        Condition::Negative(Box::new(Condition::Keyword("検索２".into()))),
+                        Condition::Not(Box::new(Condition::Keyword("検索２".into()))),
                         Condition::PhraseKeyword("検索３".into()),
-                        Condition::Negative(Box::new(Condition::PhraseKeyword("検索４".into())))
+                        Condition::Not(Box::new(Condition::PhraseKeyword("検索４".into())))
                     ]
                 )
             )
@@ -632,9 +632,9 @@ mod tests {
                     Operator::Or,
                     vec![
                         Condition::Keyword("検索１".into()),
-                        Condition::Negative(Box::new(Condition::Keyword("検索２".into()))),
+                        Condition::Not(Box::new(Condition::Keyword("検索２".into()))),
                         Condition::PhraseKeyword("検索３".into()),
-                        Condition::Negative(Box::new(Condition::PhraseKeyword("検索４".into())))
+                        Condition::Not(Box::new(Condition::PhraseKeyword("検索４".into())))
                     ]
                 )
             )
@@ -655,16 +655,14 @@ mod tests {
                             Operator::And,
                             vec![
                                 Condition::Keyword("検索１".into()),
-                                Condition::Negative(Box::new(Condition::Keyword("検索２".into()))),
+                                Condition::Not(Box::new(Condition::Keyword("検索２".into()))),
                             ]
                         ),
                         Condition::Operator(
                             Operator::And,
                             vec![
                                 Condition::PhraseKeyword("検索３".into()),
-                                Condition::Negative(Box::new(Condition::PhraseKeyword(
-                                    "検索４".into()
-                                )))
+                                Condition::Not(Box::new(Condition::PhraseKeyword("検索４".into())))
                             ]
                         )
                     ]
@@ -690,7 +688,7 @@ mod tests {
                                 Condition::Operator(
                                     Operator::Or,
                                     vec![
-                                        Condition::Negative(Box::new(Condition::Keyword(
+                                        Condition::Not(Box::new(Condition::Keyword(
                                             "検索２".into()
                                         ))),
                                         Condition::PhraseKeyword("検索３".into()),
@@ -698,7 +696,7 @@ mod tests {
                                 ),
                             ]
                         ),
-                        Condition::Negative(Box::new(Condition::PhraseKeyword("検索４".into())))
+                        Condition::Not(Box::new(Condition::PhraseKeyword("検索４".into())))
                     ]
                 )
             )
@@ -719,10 +717,10 @@ mod tests {
                             Operator::And,
                             vec![
                                 Condition::Keyword("検索１".into()),
-                                Condition::Negative(Box::new(Condition::Operator(
+                                Condition::Not(Box::new(Condition::Operator(
                                     Operator::Or,
                                     vec![
-                                        Condition::Negative(Box::new(Condition::Keyword(
+                                        Condition::Not(Box::new(Condition::Keyword(
                                             "検索２".into()
                                         ))),
                                         Condition::PhraseKeyword("検索３".into()),
@@ -730,7 +728,7 @@ mod tests {
                                 ))),
                             ]
                         ),
-                        Condition::Negative(Box::new(Condition::PhraseKeyword("検索４".into())))
+                        Condition::Not(Box::new(Condition::PhraseKeyword("検索４".into())))
                     ]
                 )
             )
@@ -754,16 +752,14 @@ mod tests {
                             Operator::Or,
                             vec![
                                 Condition::Keyword("検索１".into()),
-                                Condition::Negative(Box::new(Condition::Keyword("検索２".into()))),
+                                Condition::Not(Box::new(Condition::Keyword("検索２".into()))),
                             ]
                         ),
                         Condition::Operator(
                             Operator::Or,
                             vec![
                                 Condition::PhraseKeyword("検索３".into()),
-                                Condition::Negative(Box::new(Condition::PhraseKeyword(
-                                    "検索４".into()
-                                )))
+                                Condition::Not(Box::new(Condition::PhraseKeyword("検索４".into())))
                             ]
                         ),
                         Condition::Operator(
@@ -796,7 +792,7 @@ mod tests {
                             Operator::And,
                             vec![
                                 Condition::Keyword("検索１".into()),
-                                Condition::Negative(Box::new(Condition::Keyword("検索２".into()))),
+                                Condition::Not(Box::new(Condition::Keyword("検索２".into()))),
                             ]
                         ),
                         Condition::Operator(
@@ -806,7 +802,7 @@ mod tests {
                                     Operator::Or,
                                     vec![
                                         Condition::PhraseKeyword("検索３".into()),
-                                        Condition::Negative(Box::new(Condition::PhraseKeyword(
+                                        Condition::Not(Box::new(Condition::PhraseKeyword(
                                             "検索４".into()
                                         )))
                                     ]
@@ -843,7 +839,7 @@ mod tests {
                             Operator::And,
                             vec![
                                 Condition::Keyword("検索１".into()),
-                                Condition::Negative(Box::new(Condition::Keyword("検索２".into()))),
+                                Condition::Not(Box::new(Condition::Keyword("検索２".into()))),
                             ]
                         ),
                         Condition::Operator(
@@ -855,7 +851,7 @@ mod tests {
                                         Condition::PhraseKeyword(
                                             " Ｐ１ and Ｐ２ -(Ｐ３ or Ｐ４) ".into()
                                         ),
-                                        Condition::Negative(Box::new(Condition::PhraseKeyword(
+                                        Condition::Not(Box::new(Condition::PhraseKeyword(
                                             " ＮＰ１ and ＮＰ２ -(ＮＰ３ or ＮＰ４) ".into()
                                         )))
                                     ]
@@ -892,7 +888,7 @@ mod tests {
                             Operator::And,
                             vec![
                                 Condition::Keyword("検索１".into()),
-                                Condition::Negative(Box::new(Condition::Keyword("検索２".into()))),
+                                Condition::Not(Box::new(Condition::Keyword("検索２".into()))),
                             ]
                         ),
                         Condition::Operator(
@@ -902,7 +898,7 @@ mod tests {
                                     Operator::Or,
                                     vec![
                                         Condition::PhraseKeyword("検索３".into()),
-                                        Condition::Negative(Box::new(Condition::PhraseKeyword(
+                                        Condition::Not(Box::new(Condition::PhraseKeyword(
                                             "検索４".into()
                                         )))
                                     ]
@@ -944,7 +940,7 @@ mod tests {
                                         Condition::Operator(
                                             Operator::And,
                                             vec![
-                                                Condition::Negative(Box::new(Condition::Operator(
+                                                Condition::Not(Box::new(Condition::Operator(
                                                     Operator::Or,
                                                     vec![
                                                         Condition::Keyword("ＤＤＤ".into()),
@@ -965,7 +961,7 @@ mod tests {
                                                         Condition::Operator(
                                                             Operator::And,
                                                             vec![
-                                                                Condition::Negative(Box::new(
+                                                                Condition::Not(Box::new(
                                                                     Condition::PhraseKeyword(
                                                                         "あああ　いいい".into()
                                                                     )
@@ -985,7 +981,7 @@ mod tests {
                         Condition::Operator(
                             Operator::And,
                             vec![
-                                Condition::Negative(Box::new(Condition::Operator(
+                                Condition::Not(Box::new(Condition::Operator(
                                     Operator::Or,
                                     vec![
                                         Condition::Keyword("ＫＫＫ".into()),

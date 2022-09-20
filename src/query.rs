@@ -161,9 +161,7 @@ impl Query {
             ) {
                 (Some(npk), _) => regex_match_number(npk.get(1), |i| {
                     negative_phrase_keywords.get(i - 1).map(|npk| {
-                        Condition::Negative(Box::new(Condition::PhraseKeyword(
-                            npk.value_ref().into(),
-                        )))
+                        Condition::Not(Box::new(Condition::PhraseKeyword(npk.value_ref().into())))
                     })
                 }),
                 (_, Some(pk)) => regex_match_number(pk.get(1), |i| {
@@ -173,7 +171,7 @@ impl Query {
                 }),
                 (None, None) => match (self.value_ref().len(), self.value_ref().starts_with("-")) {
                     (1, _) => Some(Condition::Keyword(self.value())),
-                    (_, true) => Some(Condition::Negative(Box::new(Condition::Keyword(
+                    (_, true) => Some(Condition::Not(Box::new(Condition::Keyword(
                         self.value_ref()[1..self.value_ref().len()].into(),
                     )))),
                     _ => {
@@ -512,7 +510,7 @@ mod tests {
                 actual,
                 (
                     false,
-                    Condition::Negative(Box::new(Condition::Keyword("ＡＡＡ".into()))),
+                    Condition::Not(Box::new(Condition::Keyword("ＡＡＡ".into()))),
                     false
                 )
             )
@@ -526,7 +524,7 @@ mod tests {
                 actual,
                 (
                     false,
-                    Condition::Negative(Box::new(Condition::PhraseKeyword("ＡＡＡ ＢＢＢ".into()))),
+                    Condition::Not(Box::new(Condition::PhraseKeyword("ＡＡＡ ＢＢＢ".into()))),
                     false
                 )
             )
@@ -540,7 +538,7 @@ mod tests {
                 actual,
                 (
                     false,
-                    Condition::Negative(Box::new(Condition::PhraseKeyword(
+                    Condition::Not(Box::new(Condition::PhraseKeyword(
                         " ＮＰ１ and ＮＰ２ -(ＮＰ３ or ＮＰ４) ".into()
                     ))),
                     false
@@ -558,7 +556,7 @@ mod tests {
                 actual,
                 (
                     false,
-                    Condition::Negative(Box::new(Condition::PhraseKeyword(
+                    Condition::Not(Box::new(Condition::PhraseKeyword(
                         "　ＮＰ１　ａｎｄ　ＮＰ２　−（ＮＰ３　ｏｒ　ＮＰ４）　".into()
                     ))),
                     false
@@ -577,36 +575,16 @@ mod tests {
                     Condition::Operator(
                         Operator::And,
                         vec![
-                            Condition::Negative(Box::new(Condition::PhraseKeyword(
-                                "ＡＡＡ１".into()
-                            ))),
-                            Condition::Negative(Box::new(Condition::PhraseKeyword(
-                                "ＡＡＡ２".into()
-                            ))),
-                            Condition::Negative(Box::new(Condition::PhraseKeyword(
-                                "ＡＡＡ３".into()
-                            ))),
-                            Condition::Negative(Box::new(Condition::PhraseKeyword(
-                                "ＡＡＡ４".into()
-                            ))),
-                            Condition::Negative(Box::new(Condition::PhraseKeyword(
-                                "ＡＡＡ５".into()
-                            ))),
-                            Condition::Negative(Box::new(Condition::PhraseKeyword(
-                                "ＡＡＡ６".into()
-                            ))),
-                            Condition::Negative(Box::new(Condition::PhraseKeyword(
-                                "ＡＡＡ７".into()
-                            ))),
-                            Condition::Negative(Box::new(Condition::PhraseKeyword(
-                                "ＡＡＡ８".into()
-                            ))),
-                            Condition::Negative(Box::new(Condition::PhraseKeyword(
-                                "ＡＡＡ９".into()
-                            ))),
-                            Condition::Negative(Box::new(Condition::PhraseKeyword(
-                                "ＡＡＡ１０".into()
-                            ))),
+                            Condition::Not(Box::new(Condition::PhraseKeyword("ＡＡＡ１".into()))),
+                            Condition::Not(Box::new(Condition::PhraseKeyword("ＡＡＡ２".into()))),
+                            Condition::Not(Box::new(Condition::PhraseKeyword("ＡＡＡ３".into()))),
+                            Condition::Not(Box::new(Condition::PhraseKeyword("ＡＡＡ４".into()))),
+                            Condition::Not(Box::new(Condition::PhraseKeyword("ＡＡＡ５".into()))),
+                            Condition::Not(Box::new(Condition::PhraseKeyword("ＡＡＡ６".into()))),
+                            Condition::Not(Box::new(Condition::PhraseKeyword("ＡＡＡ７".into()))),
+                            Condition::Not(Box::new(Condition::PhraseKeyword("ＡＡＡ８".into()))),
+                            Condition::Not(Box::new(Condition::PhraseKeyword("ＡＡＡ９".into()))),
+                            Condition::Not(Box::new(Condition::PhraseKeyword("ＡＡＡ１０".into()))),
                         ]
                     ),
                     false
@@ -665,8 +643,8 @@ mod tests {
                     Condition::Operator(
                         Operator::And,
                         vec![
-                            Condition::Negative(Box::new(Condition::Keyword("ＡＡＡ".into()))),
-                            Condition::Negative(Box::new(Condition::Keyword("ＢＢＢ".into())))
+                            Condition::Not(Box::new(Condition::Keyword("ＡＡＡ".into()))),
+                            Condition::Not(Box::new(Condition::Keyword("ＢＢＢ".into())))
                         ]
                     ),
                     false
@@ -685,10 +663,10 @@ mod tests {
                     Condition::Operator(
                         Operator::And,
                         vec![
-                            Condition::Negative(Box::new(Condition::PhraseKeyword(
+                            Condition::Not(Box::new(Condition::PhraseKeyword(
                                 "ＡＡＡ ＢＢＢ".into()
                             ))),
-                            Condition::Negative(Box::new(Condition::PhraseKeyword(
+                            Condition::Not(Box::new(Condition::PhraseKeyword(
                                 "ＣＣＣ ＤＤＤ".into()
                             )))
                         ]
@@ -711,10 +689,8 @@ mod tests {
                         vec![
                             Condition::Keyword("ＡＡＡ".into()),
                             Condition::PhraseKeyword("ＢＢＢ".into()),
-                            Condition::Negative(Box::new(Condition::PhraseKeyword(
-                                "ＣＣＣ".into()
-                            ))),
-                            Condition::Negative(Box::new(Condition::Keyword("ＤＤＤ".into())))
+                            Condition::Not(Box::new(Condition::PhraseKeyword("ＣＣＣ".into()))),
+                            Condition::Not(Box::new(Condition::Keyword("ＤＤＤ".into())))
                         ]
                     ),
                     false
@@ -737,13 +713,9 @@ mod tests {
                             Condition::Keyword("ＡＡＡ".into()),
                             Condition::PhraseKeyword("ＢＢＢ".into()),
                             Condition::PhraseKeyword("ｂｂｂ".into()),
-                            Condition::Negative(Box::new(Condition::PhraseKeyword(
-                                "ＣＣＣ".into()
-                            ))),
-                            Condition::Negative(Box::new(Condition::PhraseKeyword(
-                                "ｃｃｃ".into()
-                            ))),
-                            Condition::Negative(Box::new(Condition::Keyword("ＤＤＤ".into())))
+                            Condition::Not(Box::new(Condition::PhraseKeyword("ＣＣＣ".into()))),
+                            Condition::Not(Box::new(Condition::PhraseKeyword("ｃｃｃ".into()))),
+                            Condition::Not(Box::new(Condition::Keyword("ＤＤＤ".into())))
                         ]
                     ),
                     false
@@ -802,8 +774,8 @@ mod tests {
                     Condition::Operator(
                         Operator::Or,
                         vec![
-                            Condition::Negative(Box::new(Condition::Keyword("ＡＡＡ".into()))),
-                            Condition::Negative(Box::new(Condition::Keyword("ＢＢＢ".into())))
+                            Condition::Not(Box::new(Condition::Keyword("ＡＡＡ".into()))),
+                            Condition::Not(Box::new(Condition::Keyword("ＢＢＢ".into())))
                         ]
                     ),
                     false
@@ -822,10 +794,10 @@ mod tests {
                     Condition::Operator(
                         Operator::Or,
                         vec![
-                            Condition::Negative(Box::new(Condition::PhraseKeyword(
+                            Condition::Not(Box::new(Condition::PhraseKeyword(
                                 "ＡＡＡ ＢＢＢ".into()
                             ))),
-                            Condition::Negative(Box::new(Condition::PhraseKeyword(
+                            Condition::Not(Box::new(Condition::PhraseKeyword(
                                 "ＣＣＣ ＤＤＤ".into()
                             )))
                         ]
@@ -906,8 +878,8 @@ mod tests {
                     Condition::Operator(
                         Operator::And,
                         vec![
-                            Condition::Negative(Box::new(Condition::Keyword("ＡＡＡ".into()))),
-                            Condition::Negative(Box::new(Condition::Keyword("ＢＢＢ".into())))
+                            Condition::Not(Box::new(Condition::Keyword("ＡＡＡ".into()))),
+                            Condition::Not(Box::new(Condition::Keyword("ＢＢＢ".into())))
                         ]
                     ),
                     false
@@ -926,10 +898,10 @@ mod tests {
                     Condition::Operator(
                         Operator::And,
                         vec![
-                            Condition::Negative(Box::new(Condition::PhraseKeyword(
+                            Condition::Not(Box::new(Condition::PhraseKeyword(
                                 "ＡＡＡ ＢＢＢ".into()
                             ))),
-                            Condition::Negative(Box::new(Condition::PhraseKeyword(
+                            Condition::Not(Box::new(Condition::PhraseKeyword(
                                 "ＣＣＣ ＤＤＤ".into()
                             )))
                         ]
@@ -1061,9 +1033,7 @@ mod tests {
                                 Operator::And,
                                 vec![
                                     Condition::Keyword("ＡＡＡ".into()),
-                                    Condition::Negative(Box::new(Condition::Keyword(
-                                        "ＢＢＢ".into()
-                                    ))),
+                                    Condition::Not(Box::new(Condition::Keyword("ＢＢＢ".into()))),
                                     Condition::Keyword("ＣorＣ".into()),
                                     Condition::Keyword("ｃｃｃ".into()),
                                 ]
@@ -1072,14 +1042,14 @@ mod tests {
                                 Operator::And,
                                 vec![
                                     Condition::PhraseKeyword("c1 and c2".into()),
-                                    Condition::Negative(Box::new(Condition::PhraseKeyword(
+                                    Condition::Not(Box::new(Condition::PhraseKeyword(
                                         "c3 or c4".into()
                                     ))),
                                     Condition::Keyword("ＤandＤ".into()),
                                     Condition::PhraseKeyword(
                                         " Ｐ１ and Ｐ２ -(Ｐ３ or Ｐ４) ".into()
                                     ),
-                                    Condition::Negative(Box::new(Condition::PhraseKeyword(
+                                    Condition::Not(Box::new(Condition::PhraseKeyword(
                                         " ＮＰ１ and ＮＰ２ -(ＮＰ３ or ＮＰ４) ".into()
                                     )))
                                 ]
