@@ -4,9 +4,9 @@ version = "0.1.0"
 edition = "2021"
 authors = ["dimmy82 <chengdimmy82@yahoo.co.jp>"]
 description = "parse complex search query to layered search conditions"
-homepage = "https://github.com/dimmy82/rust-concurrency-request"
-repository = "https://github.com/dimmy82/rust-concurrency-request"
-documentation = "https://docs.rs/rust-concurrency-request"
+homepage = "https://github.com/dimmy82/search-query-parser"
+repository = "https://github.com/dimmy82/search-query-parser"
+documentation = "https://docs.rs/search-query-parser"
 readme = "README.md"
 license = "MIT"
 
