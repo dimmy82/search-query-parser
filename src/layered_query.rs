@@ -777,7 +777,7 @@ mod tests {
         #[test]
         fn test_layered_queries_parse_to_condition_nested_brackets() {
             let query = Query::new(
-                " (keyword１ and -keyword２) or ((\"phrase keyword １\" or -\"phrase keyword ２\") and -(\" a long phrase keyword \" or keyword３)) "
+                " (word１ and -word２) or ((\"phrase word １\" or -\"phrase word ２\") and -(\" a long phrase word \" or word３)) "
                     .into(),
             );
             assert_eq!(
@@ -791,8 +791,8 @@ mod tests {
                         Condition::Operator(
                             Operator::And,
                             vec![
-                                Condition::Keyword("keyword１".into()),
-                                Condition::Not(Box::new(Condition::Keyword("keyword２".into()))),
+                                Condition::Keyword("word１".into()),
+                                Condition::Not(Box::new(Condition::Keyword("word２".into()))),
                             ]
                         ),
                         Condition::Operator(
@@ -801,17 +801,17 @@ mod tests {
                                 Condition::Operator(
                                     Operator::Or,
                                     vec![
-                                        Condition::PhraseKeyword("phrase keyword １".into()),
+                                        Condition::PhraseKeyword("phrase word １".into()),
                                         Condition::Not(Box::new(Condition::PhraseKeyword(
-                                            "phrase keyword ２".into()
+                                            "phrase word ２".into()
                                         )))
                                     ]
                                 ),
                                 Condition::Not(Box::new(Condition::Operator(
                                     Operator::Or,
                                     vec![
-                                        Condition::PhraseKeyword(" a long phrase keyword ".into()),
-                                        Condition::Keyword("keyword３".into())
+                                        Condition::PhraseKeyword(" a long phrase word ".into()),
+                                        Condition::Keyword("word３".into())
                                     ]
                                 )))
                             ]
