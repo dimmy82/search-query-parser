@@ -777,7 +777,7 @@ mod tests {
         #[test]
         fn test_layered_queries_parse_to_condition_nested_brackets() {
             let query = Query::new(
-                " word１ and -word２ or ((\"phrase word １\" or -\"phrase word ２\") and -(\" a long phrase word \" or word３)) "
+                " (word１ and -word２) or ((\"phrase word １\" or -\"phrase word ２\") and -(\" a long phrase word \" or word３)) "
                     .into(),
             );
             assert_eq!(
