@@ -8,7 +8,7 @@ search-query-parser is made to parse complex search query into layered search co
 
 the complex search query like this: ↓↓↓
 
-`word１ and -word２ or (("phrase word １" or -"phrase word ２") and -(" a long phrase word " or word３))`
+`(word１ and -word２) or (("phrase word １" or -"phrase word ２") and -(" a long phrase word " or word３))`
 
 will be parsed into layered search conditions like this: ↓↓↓
 
