@@ -19,8 +19,8 @@ Condition::Operator(
         Condition::Operator(
             Operator::And,
             vec![
-                Condition::Keyword("keyword１".into()),
-                Condition::Not(Box::new(Condition::Keyword("keyword２".into()))),
+                Condition::Keyword("word１".into()),
+                Condition::Not(Box::new(Condition::Keyword("word２".into()))),
             ]
         ),
         Condition::Operator(
@@ -29,17 +29,17 @@ Condition::Operator(
                 Condition::Operator(
                     Operator::Or,
                     vec![
-                        Condition::PhraseKeyword("phrase keyword １".into()),
+                        Condition::PhraseKeyword("phrase word １".into()),
                         Condition::Not(Box::new(Condition::PhraseKeyword(
-                            "phrase keyword ２".into()
+                            "phrase word ２".into()
                         )))
                     ]
                 ),
                 Condition::Not(Box::new(Condition::Operator(
                     Operator::Or,
                     vec![
-                        Condition::PhraseKeyword(" a long phrase keyword ".into()),
-                        Condition::Keyword("keyword３".into())
+                        Condition::PhraseKeyword(" a long phrase word ".into()),
+                        Condition::Keyword("word３".into())
                     ]
                 )))
             ]
