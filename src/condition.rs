@@ -1,4 +1,5 @@
 use crate::condition::Condition::Not;
+use crate::query::Query;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum Condition {
@@ -40,6 +41,20 @@ impl Condition {
                     _ => Condition::Operator(operator, conditions),
                 }
             }
+            Condition::PhraseKeyword(k) => {
+                if Query::new(k.clone()).is_not_blank() {
+                    Condition::PhraseKeyword(k)
+                } else {
+                    Condition::None
+                }
+            }
+            Condition::Keyword(k) => {
+                if Query::new(k.clone()).is_not_blank() {
+                    Condition::Keyword(k)
+                } else {
+                    Condition::None
+                }
+            }
             _ => self,
         }
     }
@@ -66,10 +81,39 @@ mod tests {
         }
 
         #[test]
+        fn test_simplify_empty_keyword() {
+            assert_eq!(Condition::Keyword("".into()).simplify(), Condition::None)
+        }
+
+        #[test]
+        fn test_simplify_blank_keyword() {
+            assert_eq!(
+                Condition::Keyword(" 　　 ".into()).simplify(),
+                Condition::None
+            )
+        }
+
+        #[test]
         fn test_simplify_phrase_keyword() {
             assert_eq!(
                 Condition::PhraseKeyword("phrase keyword".into()).simplify(),
                 Condition::PhraseKeyword("phrase keyword".into())
+            )
+        }
+
+        #[test]
+        fn test_simplify_empty_phrase_keyword() {
+            assert_eq!(
+                Condition::PhraseKeyword("".into()).simplify(),
+                Condition::None
+            )
+        }
+
+        #[test]
+        fn test_simplify_blank_phrase_keyword() {
+            assert_eq!(
+                Condition::PhraseKeyword(" 　　 ".into()).simplify(),
+                Condition::None
             )
         }
 
@@ -90,11 +134,27 @@ mod tests {
         }
 
         #[test]
+        fn test_simplify_negative_empty_keyword() {
+            assert_eq!(
+                Condition::Not(Box::new(Condition::Keyword("".into()))).simplify(),
+                Condition::None
+            )
+        }
+
+        #[test]
         fn test_simplify_negative_phrase_keyword() {
             assert_eq!(
                 Condition::Not(Box::new(Condition::PhraseKeyword("phrase keyword".into())))
                     .simplify(),
                 Condition::Not(Box::new(Condition::PhraseKeyword("phrase keyword".into())))
+            )
+        }
+
+        #[test]
+        fn test_simplify_negative_empty_phrase_keyword() {
+            assert_eq!(
+                Condition::Not(Box::new(Condition::PhraseKeyword("".into()))).simplify(),
+                Condition::None
             )
         }
 
@@ -204,12 +264,10 @@ mod tests {
             assert_eq!(
                 Condition::Operator(
                     Operator::And,
-                    vec![Condition::Not(Box::new(Condition::Keyword(
-                        "negative".into()
-                    )))]
+                    vec![Condition::Not(Box::new(Condition::Keyword("not".into())))]
                 )
                 .simplify(),
-                Condition::Not(Box::new(Condition::Keyword("negative".into())))
+                Condition::Not(Box::new(Condition::Keyword("not".into())))
             )
         }
 
@@ -262,7 +320,7 @@ mod tests {
                         Condition::None,
                         Condition::PhraseKeyword("phrase keyword".into()),
                         Condition::None,
-                        Condition::Not(Box::new(Condition::Keyword("negative".into()))),
+                        Condition::Not(Box::new(Condition::Keyword("not".into()))),
                         Condition::Operator(
                             Operator::Or,
                             vec![
@@ -278,7 +336,7 @@ mod tests {
                     vec![
                         Condition::Keyword("keyword".into()),
                         Condition::PhraseKeyword("phrase keyword".into()),
-                        Condition::Not(Box::new(Condition::Keyword("negative".into()))),
+                        Condition::Not(Box::new(Condition::Keyword("not".into()))),
                         Condition::Operator(
                             Operator::Or,
                             vec![
@@ -333,12 +391,10 @@ mod tests {
             assert_eq!(
                 Condition::Operator(
                     Operator::Or,
-                    vec![Condition::Not(Box::new(Condition::Keyword(
-                        "negative".into()
-                    )))]
+                    vec![Condition::Not(Box::new(Condition::Keyword("not".into())))]
                 )
                 .simplify(),
-                Condition::Not(Box::new(Condition::Keyword("negative".into())))
+                Condition::Not(Box::new(Condition::Keyword("not".into())))
             )
         }
 
@@ -391,7 +447,7 @@ mod tests {
                         Condition::None,
                         Condition::PhraseKeyword("phrase keyword".into()),
                         Condition::None,
-                        Condition::Not(Box::new(Condition::Keyword("negative".into()))),
+                        Condition::Not(Box::new(Condition::Keyword("not".into()))),
                         Condition::None,
                         Condition::Operator(
                             Operator::And,
@@ -408,7 +464,7 @@ mod tests {
                     vec![
                         Condition::Keyword("keyword".into()),
                         Condition::PhraseKeyword("phrase keyword".into()),
-                        Condition::Not(Box::new(Condition::Keyword("negative".into()))),
+                        Condition::Not(Box::new(Condition::Keyword("not".into()))),
                         Condition::Operator(
                             Operator::And,
                             vec![
