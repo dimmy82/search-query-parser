@@ -41,7 +41,11 @@ impl Query {
     }
 
     pub(crate) fn is_not_blank(&self) -> bool {
-        self.value_ref().replace(" ", "").is_empty() == false
+        self.value_ref()
+            .replace(" ", "")
+            .replace("　", "")
+            .is_empty()
+            == false
     }
 
     pub(crate) fn extract_phrase_keywords(self) -> Result<(Self, Vec<Query>, Vec<Query>)> {
@@ -232,6 +236,26 @@ mod tests {
             let (query, negative_phrase_keywords, phrase_keywords) =
                 target.extract_phrase_keywords().unwrap();
             assert_eq!(query, Query::new("Ａ１ Ａ２".into()));
+            assert_eq!(negative_phrase_keywords, vec![]);
+            assert_eq!(phrase_keywords, vec![])
+        }
+
+        #[test]
+        fn test_extract_phrase_keywords_empty_phrase_keyword() {
+            let target = Query::new("Ａ１ \"\" Ａ２".into());
+            let (query, negative_phrase_keywords, phrase_keywords) =
+                target.extract_phrase_keywords().unwrap();
+            assert_eq!(query, Query::new("Ａ１  Ａ２".into()));
+            assert_eq!(negative_phrase_keywords, vec![]);
+            assert_eq!(phrase_keywords, vec![])
+        }
+
+        #[test]
+        fn test_extract_phrase_keywords_blank_phrase_keyword() {
+            let target = Query::new("Ａ１ \" 　　 \" Ａ２".into());
+            let (query, negative_phrase_keywords, phrase_keywords) =
+                target.extract_phrase_keywords().unwrap();
+            assert_eq!(query, Query::new("Ａ１  Ａ２".into()));
             assert_eq!(negative_phrase_keywords, vec![]);
             assert_eq!(phrase_keywords, vec![])
         }
