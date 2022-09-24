@@ -50,8 +50,36 @@ Condition::Operator(
 )
 ```
 
-## usage
+the conditions are constructed by the `enum Condition` and `enum Operator`.
 
 ```Rust
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub enum Condition {
+    None,
+    Keyword(String),
+    PhraseKeyword(String),
+    Not(Box<Condition>),
+    Operator(Operator, Vec<Condition>),
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub enum Operator {
+    And,
+    Or,
+}
+```
+
+## usage
+
+```toml
+[dependencies]
+search-query-parser = "0.1.1"
+```
+
+```Rust
+use search_query_parser::parse_query_to_condition;
+
 let condition = parse_query_to_condition("any query string you like")?;
 ```
+
+## parse rules
