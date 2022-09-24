@@ -1,6 +1,6 @@
 [package]
 name = "search-query-parser"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 authors = ["dimmy82 <chengdimmy82@yahoo.co.jp>"]
 description = "parse complex search query into layered search conditions, so it will be easy to construct Elasticsearch query DSL or something else."
