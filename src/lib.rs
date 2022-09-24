@@ -3,7 +3,7 @@ use crate::layered_query::LayeredQueries;
 use crate::query::Query;
 use eyre::Result;
 use regex::Match;
-mod condition;
+pub mod condition;
 mod layered_query;
 mod query;
 
