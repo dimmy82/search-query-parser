@@ -4,6 +4,8 @@
 [![docs.rs](https://docs.rs/search-query-parser/badge.svg)](https://docs.rs/search-query-parser)
 [![build](https://github.com/dimmy82/search-query-parser/actions/workflows/build_and_test.yml/badge.svg)](https://github.com/dimmy82/search-query-parser/actions)
 
+## what is it for
+
 search-query-parser is made to parse complex search query into layered search conditions, so it will be easy to construct Elasticsearch query DSL or something else.
 
 the complex search query like this: ↓↓↓
@@ -46,4 +48,10 @@ Condition::Operator(
         ),
     ]
 )
+```
+
+## usage
+
+```Rust
+let condition = parse_query_to_condition("any query string you like")?;
 ```
