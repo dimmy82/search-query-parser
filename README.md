@@ -83,3 +83,42 @@ let condition = parse_query_to_condition("any query string you like")?;
 ```
 
 ## parse rules
+
+### 1. space {\u0020} or full width space {\u3000} are identified as `AND` operator
+
+```Rust
+assert_eq!(
+    parse_query_to_condition("word1 word2").unwrap(),
+    parse_query_to_condition("word1 AND word2").unwrap()
+);
+```
+
+### 2. conditions in brackets have higher priority
+
+```Rust
+assert_eq!(
+    parse_query_to_condition("word1 OR (word2 AND word3)").unwrap(),
+    Condition::Operator(
+        Operator::Or,
+        vec![
+            Condition::Keyword("word1".into()),
+            Condition::Operator(
+                Operator::And,
+                vec![
+                    Condition::Keyword("word2".into()),
+                    Condition::Keyword("word3".into()),
+                ]
+            )
+        ]
+    )
+);
+```
+
+### 3. `AND` operator has higher priority than `OR` operator
+
+```Rust
+assert_eq!(
+    parse_query_to_condition("word1 OR word2 AND word3").unwrap(),
+    parse_query_to_condition("word1 OR (word2 AND word3)").unwrap()
+);
+```
