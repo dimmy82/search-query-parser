@@ -1,7 +1,8 @@
 use crate::condition::Condition::Not;
 use crate::query::Query;
+use serde::Serialize;
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize)]
 pub enum Condition {
     None,
     Keyword(String),
@@ -10,7 +11,7 @@ pub enum Condition {
     Operator(Operator, Vec<Condition>),
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize)]
 pub enum Operator {
     And,
     Or,
