@@ -1,6 +1,6 @@
-use crate::condition::{Condition, Operator};
-use crate::query::Query;
-use crate::{regex_match_not_blank_query, regex_match_number};
+use crate::regex_approach::query::Query;
+use crate::regex_approach::{regex_match_not_blank_query, regex_match_number};
+use crate::{Condition, Operator};
 use eyre::Result;
 use regex::{Captures, Regex};
 
@@ -175,7 +175,6 @@ impl LayeredQueries {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::query::Query;
 
     mod test_parse {
         use super::*;

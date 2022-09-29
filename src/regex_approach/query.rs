@@ -1,5 +1,5 @@
-use crate::condition::{Condition, Operator};
-use crate::{regex_match_not_blank_query, regex_match_number};
+use crate::regex_approach::{regex_match_not_blank_query, regex_match_number};
+use crate::{Condition, Operator};
 use eyre::Result;
 use regex::{Captures, Regex};
 

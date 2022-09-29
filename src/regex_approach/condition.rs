@@ -1,21 +1,6 @@
-use crate::condition::Condition::Not;
-use crate::query::Query;
-use serde::Serialize;
-
-#[derive(Debug, Clone, Eq, PartialEq, Serialize)]
-pub enum Condition {
-    None,
-    Keyword(String),
-    PhraseKeyword(String),
-    Not(Box<Condition>),
-    Operator(Operator, Vec<Condition>),
-}
-
-#[derive(Debug, Clone, Eq, PartialEq, Serialize)]
-pub enum Operator {
-    And,
-    Or,
-}
+use crate::regex_approach::query::Query;
+use crate::Condition;
+use crate::Condition::Not;
 
 impl Condition {
     pub(crate) fn simplify(self) -> Self {
@@ -67,6 +52,7 @@ mod tests {
 
     mod test_condition_simplify {
         use super::*;
+        use crate::Operator;
 
         #[test]
         fn test_simplify_none() {

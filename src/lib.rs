@@ -1,27 +1,26 @@
-use crate::condition::Condition;
-use crate::layered_query::LayeredQueries;
-use crate::query::Query;
+mod bnf_approach;
+mod regex_approach;
+
+use crate::regex_approach::layered_query::LayeredQueries;
+use crate::regex_approach::query::Query;
 use eyre::Result;
-use regex::Match;
-pub mod condition;
-mod layered_query;
-mod query;
+use serde::Serialize;
 
 pub fn parse_query_to_condition(query: &str) -> Result<Condition> {
     LayeredQueries::parse(Query::new(query.into()))?.to_condition()
 }
 
-pub(crate) fn regex_match_not_blank_query(regex_match: Option<Match>) -> Option<Query> {
-    regex_match
-        .map(|m| Query::new(m.as_str().into()))
-        .filter(|q| q.is_not_blank())
+#[derive(Debug, Clone, Eq, PartialEq, Serialize)]
+pub enum Condition {
+    None,
+    Keyword(String),
+    PhraseKeyword(String),
+    Not(Box<Condition>),
+    Operator(Operator, Vec<Condition>),
 }
 
-pub(crate) fn regex_match_number<F: FnOnce(usize) -> Option<R>, R>(
-    regex_match: Option<Match>, call_back: F,
-) -> Option<R> {
-    regex_match
-        .map(|m| m.as_str().parse::<usize>())
-        .map(|index| index.map(|i| call_back(i)).unwrap_or(None))
-        .flatten()
+#[derive(Debug, Clone, Eq, PartialEq, Serialize)]
+pub enum Operator {
+    And,
+    Or,
 }
