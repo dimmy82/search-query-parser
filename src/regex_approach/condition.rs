@@ -20,11 +20,28 @@ impl Condition {
                     .collect::<Vec<Condition>>();
                 match conditions.len() {
                     0 => Condition::None,
+                    // when only one child, remove self's operator layer
                     1 => conditions
                         .get(0)
                         .map(|condition| condition.clone())
                         .unwrap_or(Condition::None),
-                    _ => Condition::Operator(operator, conditions),
+                    // when child is also a operator, and child's operator is equal to self's operator, remove child's operator layer
+                    _ => Condition::Operator(
+                        operator.clone(),
+                        conditions
+                            .into_iter()
+                            .flat_map(|condition| match &condition {
+                                Condition::Operator(inner_operator, inner_conditions) => {
+                                    if &operator == inner_operator {
+                                        inner_conditions.clone()
+                                    } else {
+                                        vec![condition]
+                                    }
+                                }
+                                _ => vec![condition],
+                            })
+                            .collect(),
+                    ),
                 }
             }
             Condition::PhraseKeyword(k) => {
@@ -421,6 +438,86 @@ mod tests {
                 )
                 .simplify(),
                 Condition::Keyword("keyword".into()),
+            )
+        }
+
+        #[test]
+        fn test_simplify_remove_same_operator_or_layer() {
+            assert_eq!(
+                Condition::Operator(
+                    Operator::Or,
+                    vec![
+                        Condition::Operator(
+                            Operator::And,
+                            vec![
+                                Condition::Keyword("keyword1".into()),
+                                Condition::Keyword("keyword2".into()),
+                            ]
+                        ),
+                        Condition::Operator(
+                            Operator::Or,
+                            vec![
+                                Condition::Keyword("keyword3".into()),
+                                Condition::Keyword("keyword4".into()),
+                            ]
+                        )
+                    ]
+                )
+                .simplify(),
+                Condition::Operator(
+                    Operator::Or,
+                    vec![
+                        Condition::Operator(
+                            Operator::And,
+                            vec![
+                                Condition::Keyword("keyword1".into()),
+                                Condition::Keyword("keyword2".into()),
+                            ]
+                        ),
+                        Condition::Keyword("keyword3".into()),
+                        Condition::Keyword("keyword4".into())
+                    ]
+                ),
+            )
+        }
+
+        #[test]
+        fn test_simplify_remove_same_operator_and_layer() {
+            assert_eq!(
+                Condition::Operator(
+                    Operator::And,
+                    vec![
+                        Condition::Operator(
+                            Operator::Or,
+                            vec![
+                                Condition::Keyword("keyword1".into()),
+                                Condition::Keyword("keyword2".into()),
+                            ]
+                        ),
+                        Condition::Operator(
+                            Operator::And,
+                            vec![
+                                Condition::Keyword("keyword3".into()),
+                                Condition::Keyword("keyword4".into()),
+                            ]
+                        )
+                    ]
+                )
+                .simplify(),
+                Condition::Operator(
+                    Operator::And,
+                    vec![
+                        Condition::Operator(
+                            Operator::Or,
+                            vec![
+                                Condition::Keyword("keyword1".into()),
+                                Condition::Keyword("keyword2".into()),
+                            ]
+                        ),
+                        Condition::Keyword("keyword3".into()),
+                        Condition::Keyword("keyword4".into())
+                    ]
+                ),
             )
         }
 
