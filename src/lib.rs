@@ -133,4 +133,48 @@ mod tests {
             )
         )
     }
+
+    #[test]
+    fn test_full_pattern() {
+        let actual = parse_query_to_condition(
+            "(word１ and -word２) or ((\"phrase word １\" or -\"phrase word ２\") and -(\" a long phrase word \" or word３))",
+        )
+            .unwrap();
+        assert_eq!(
+            actual,
+            Condition::Operator(
+                Operator::Or,
+                vec![
+                    Condition::Operator(
+                        Operator::And,
+                        vec![
+                            Condition::Keyword("word１".into()),
+                            Condition::Not(Box::new(Condition::Keyword("word２".into()))),
+                        ]
+                    ),
+                    Condition::Operator(
+                        Operator::And,
+                        vec![
+                            Condition::Operator(
+                                Operator::Or,
+                                vec![
+                                    Condition::PhraseKeyword("phrase word １".into()),
+                                    Condition::Not(Box::new(Condition::PhraseKeyword(
+                                        "phrase word ２".into()
+                                    )))
+                                ]
+                            ),
+                            Condition::Not(Box::new(Condition::Operator(
+                                Operator::Or,
+                                vec![
+                                    Condition::PhraseKeyword(" a long phrase word ".into()),
+                                    Condition::Keyword("word３".into())
+                                ]
+                            )))
+                        ]
+                    ),
+                ]
+            )
+        )
+    }
 }
