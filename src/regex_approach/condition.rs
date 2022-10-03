@@ -454,13 +454,16 @@ mod tests {
                                 Condition::Keyword("keyword2".into()),
                             ]
                         ),
+                        Condition::PhraseKeyword("keyword3".into()),
                         Condition::Operator(
                             Operator::Or,
                             vec![
-                                Condition::Keyword("keyword3".into()),
                                 Condition::Keyword("keyword4".into()),
+                                Condition::Keyword("keyword5".into()),
                             ]
-                        )
+                        ),
+                        Condition::Keyword("keyword6".into()),
+                        Condition::Not(Box::new(Condition::Keyword("keyword7".into())))
                     ]
                 )
                 .simplify(),
@@ -474,8 +477,11 @@ mod tests {
                                 Condition::Keyword("keyword2".into()),
                             ]
                         ),
-                        Condition::Keyword("keyword3".into()),
-                        Condition::Keyword("keyword4".into())
+                        Condition::PhraseKeyword("keyword3".into()),
+                        Condition::Keyword("keyword4".into()),
+                        Condition::Keyword("keyword5".into()),
+                        Condition::Keyword("keyword6".into()),
+                        Condition::Not(Box::new(Condition::Keyword("keyword7".into())))
                     ]
                 ),
             )
@@ -494,13 +500,16 @@ mod tests {
                                 Condition::Keyword("keyword2".into()),
                             ]
                         ),
+                        Condition::PhraseKeyword("keyword3".into()),
                         Condition::Operator(
                             Operator::And,
                             vec![
-                                Condition::Keyword("keyword3".into()),
                                 Condition::Keyword("keyword4".into()),
+                                Condition::Keyword("keyword5".into()),
                             ]
-                        )
+                        ),
+                        Condition::Keyword("keyword6".into()),
+                        Condition::Not(Box::new(Condition::Keyword("keyword7".into())))
                     ]
                 )
                 .simplify(),
@@ -514,8 +523,11 @@ mod tests {
                                 Condition::Keyword("keyword2".into()),
                             ]
                         ),
-                        Condition::Keyword("keyword3".into()),
-                        Condition::Keyword("keyword4".into())
+                        Condition::PhraseKeyword("keyword3".into()),
+                        Condition::Keyword("keyword4".into()),
+                        Condition::Keyword("keyword5".into()),
+                        Condition::Keyword("keyword6".into()),
+                        Condition::Not(Box::new(Condition::Keyword("keyword7".into())))
                     ]
                 ),
             )
