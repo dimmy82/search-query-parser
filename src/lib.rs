@@ -266,6 +266,21 @@ mod tests {
         }
 
         #[test]
+        fn test_no_keyword_in_brackets() {
+            let actual = parse_query_to_condition("A AND (\"\" OR \"\") AND B").unwrap();
+            assert_eq!(
+                actual,
+                Condition::Operator(
+                    Operator::And,
+                    vec![
+                        Condition::Keyword("A".into()),
+                        Condition::Keyword("B".into()),
+                    ]
+                )
+            )
+        }
+
+        #[test]
         fn test_empty_phrase_keywords() {
             let actual = parse_query_to_condition("A AND \"\" AND B").unwrap();
             assert_eq!(
