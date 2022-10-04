@@ -122,3 +122,5 @@ assert_eq!(
     parse_query_to_condition("word1 OR (word2 AND word3)").unwrap()
 );
 ```
+
+### To Be Continued ......
