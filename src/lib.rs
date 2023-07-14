@@ -35,14 +35,14 @@ mod tests {
 
         #[test]
         fn test_keywords_concat_with_spaces() {
-            let actual = parse_query_to_condition("キーワード１ キーワード２").unwrap();
+            let actual = parse_query_to_condition("word1 word2").unwrap();
             assert_eq!(
                 actual,
                 Condition::Operator(
                     Operator::And,
                     vec![
-                        Condition::Keyword("キーワード１".into()),
-                        Condition::Keyword("キーワード２".into())
+                        Condition::Keyword("word1".into()),
+                        Condition::Keyword("word2".into())
                     ]
                 )
             )
@@ -50,19 +50,18 @@ mod tests {
 
         #[test]
         fn test_keywords_concat_with_and_or() {
-            let actual =
-                parse_query_to_condition("キーワード１ OR キーワード２ AND キーワード３").unwrap();
+            let actual = parse_query_to_condition("word1 OR word2 AND word3").unwrap();
             assert_eq!(
                 actual,
                 Condition::Operator(
                     Operator::Or,
                     vec![
-                        Condition::Keyword("キーワード１".into()),
+                        Condition::Keyword("word1".into()),
                         Condition::Operator(
                             Operator::And,
                             vec![
-                                Condition::Keyword("キーワード２".into()),
-                                Condition::Keyword("キーワード３".into()),
+                                Condition::Keyword("word2".into()),
+                                Condition::Keyword("word3".into()),
                             ]
                         )
                     ]
@@ -72,20 +71,18 @@ mod tests {
 
         #[test]
         fn test_brackets() {
-            let actual =
-                parse_query_to_condition("キーワード１ AND (キーワード２ OR キーワード３)")
-                    .unwrap();
+            let actual = parse_query_to_condition("word1 AND (word2 OR word3)").unwrap();
             assert_eq!(
                 actual,
                 Condition::Operator(
                     Operator::And,
                     vec![
-                        Condition::Keyword("キーワード１".into()),
+                        Condition::Keyword("word1".into()),
                         Condition::Operator(
                             Operator::Or,
                             vec![
-                                Condition::Keyword("キーワード２".into()),
-                                Condition::Keyword("キーワード３".into()),
+                                Condition::Keyword("word2".into()),
+                                Condition::Keyword("word3".into()),
                             ]
                         )
                     ]
@@ -95,19 +92,14 @@ mod tests {
 
         #[test]
         fn test_double_quote() {
-            let actual = parse_query_to_condition(
-                "\"キーワード１ AND (キーワード２ OR キーワード３)\" キーワード４",
-            )
-            .unwrap();
+            let actual = parse_query_to_condition("\"word1 AND (word2 OR word3)\" word4").unwrap();
             assert_eq!(
                 actual,
                 Condition::Operator(
                     Operator::And,
                     vec![
-                        Condition::PhraseKeyword(
-                            "キーワード１ AND (キーワード２ OR キーワード３)".into()
-                        ),
-                        Condition::Keyword("キーワード４".into()),
+                        Condition::PhraseKeyword("word1 AND (word2 OR word3)".into()),
+                        Condition::Keyword("word4".into()),
                     ]
                 )
             )
@@ -115,22 +107,19 @@ mod tests {
 
         #[test]
         fn test_minus() {
-            let actual = parse_query_to_condition(
-                "-キーワード１ -\"キーワード２\" -(キーワード３ OR キーワード４)",
-            )
-            .unwrap();
+            let actual = parse_query_to_condition("-word1 -\"word2\" -(word3 OR word4)").unwrap();
             assert_eq!(
                 actual,
                 Condition::Operator(
                     Operator::And,
                     vec![
-                        Condition::Not(Box::new(Condition::Keyword("キーワード１".into()))),
-                        Condition::Not(Box::new(Condition::PhraseKeyword("キーワード２".into()))),
+                        Condition::Not(Box::new(Condition::Keyword("word1".into()))),
+                        Condition::Not(Box::new(Condition::PhraseKeyword("word2".into()))),
                         Condition::Not(Box::new(Condition::Operator(
                             Operator::Or,
                             vec![
-                                Condition::Keyword("キーワード３".into()),
-                                Condition::Keyword("キーワード４".into())
+                                Condition::Keyword("word3".into()),
+                                Condition::Keyword("word4".into())
                             ]
                         ))),
                     ]
@@ -246,7 +235,7 @@ mod tests {
 
         #[test]
         fn test_invalid_nest_brackets() {
-            let actual = parse_query_to_condition("(((A OR B))) AND C").unwrap();
+            let actual = parse_query_to_condition("(((A OR B)) AND C").unwrap();
             assert_eq!(
                 actual,
                 Condition::Operator(

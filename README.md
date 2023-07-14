@@ -73,7 +73,7 @@ pub enum Operator {
 
 ```toml
 [dependencies]
-search-query-parser = "0.1.1"
+search-query-parser = "0.1.4"
 ```
 
 ```Rust
@@ -87,40 +87,261 @@ let condition = parse_query_to_condition("any query string you like")?;
 ### 1. space {\u0020} or full width space {\u3000} are identified as `AND` operator
 
 ```Rust
-assert_eq!(
-    parse_query_to_condition("word1 word2").unwrap(),
-    parse_query_to_condition("word1 AND word2").unwrap()
-);
-```
-
-### 2. conditions in brackets have higher priority
-
-```Rust
-assert_eq!(
-    parse_query_to_condition("word1 OR (word2 AND word3)").unwrap(),
-    Condition::Operator(
-        Operator::Or,
-        vec![
-            Condition::Keyword("word1".into()),
-            Condition::Operator(
-                Operator::And,
-                vec![
-                    Condition::Keyword("word2".into()),
-                    Condition::Keyword("word3".into()),
-                ]
-            )
-        ]
+fn test_keywords_concat_with_spaces() {
+    let actual = parse_query_to_condition("word1 word2").unwrap();
+    assert_eq!(
+        actual,
+        Condition::Operator(
+            Operator::And,
+            vec![
+                Condition::Keyword("word1".into()),
+                Condition::Keyword("word2".into())
+            ]
+        )
     )
-);
+}
 ```
 
-### 3. `AND` operator has higher priority than `OR` operator
+### 2. `AND` operator has higher priority than `OR` operator
 
 ```Rust
-assert_eq!(
-    parse_query_to_condition("word1 OR word2 AND word3").unwrap(),
-    parse_query_to_condition("word1 OR (word2 AND word3)").unwrap()
-);
+fn test_keywords_concat_with_and_or() {
+    let actual =
+        parse_query_to_condition("word1 OR word2 AND word3").unwrap();
+    assert_eq!(
+        actual,
+        Condition::Operator(
+            Operator::Or,
+            vec![
+                Condition::Keyword("word1".into()),
+                Condition::Operator(
+                    Operator::And,
+                    vec![
+                        Condition::Keyword("word2".into()),
+                        Condition::Keyword("word3".into()),
+                    ]
+                )
+            ]
+        )
+    )
+}
 ```
 
-### To Be Continued ......
+### 3. conditions in brackets have higher priority
+
+```Rust
+fn test_brackets() {
+    let actual =
+        parse_query_to_condition("word1 AND (word2 OR word3)")
+            .unwrap();
+    assert_eq!(
+        actual,
+        Condition::Operator(
+            Operator::And,
+            vec![
+                Condition::Keyword("word1".into()),
+                Condition::Operator(
+                    Operator::Or,
+                    vec![
+                        Condition::Keyword("word2".into()),
+                        Condition::Keyword("word3".into()),
+                    ]
+                )
+            ]
+        )
+    )
+}
+```
+
+### 4. double quote will be parsed for phrase keyword
+
+```Rust
+fn test_double_quote() {
+    let actual = parse_query_to_condition(
+        "\"word1 AND (word2 OR word3)\" word4",
+    )
+    .unwrap();
+    assert_eq!(
+        actual,
+        Condition::Operator(
+            Operator::And,
+            vec![
+                Condition::PhraseKeyword(
+                    "word1 AND (word2 OR word3)".into()
+                ),
+                Condition::Keyword("word4".into()),
+            ]
+        )
+    )
+}
+```
+
+### 5. minus(hyphen) will be parsed for negative condition
+※ it can be used before keyword, phrase keyword or brackets
+
+```Rust
+fn test_minus() {
+    let actual = parse_query_to_condition(
+        "-word1 -\"word2\" -(word3 OR word4)",
+    )
+    .unwrap();
+    assert_eq!(
+        actual,
+        Condition::Operator(
+            Operator::And,
+            vec![
+                Condition::Not(Box::new(Condition::Keyword("word1".into()))),
+                Condition::Not(Box::new(Condition::PhraseKeyword("word2".into()))),
+                Condition::Not(Box::new(Condition::Operator(
+                    Operator::Or,
+                    vec![
+                        Condition::Keyword("word3".into()),
+                        Condition::Keyword("word4".into())
+                    ]
+                ))),
+            ]
+        )
+    )
+}
+```
+
+### 6. correcting incorrect search query
+1. empty brackets
+```Rust
+fn test_empty_brackets() {
+    let actual = parse_query_to_condition("A AND () AND B").unwrap();
+    assert_eq!(
+        actual,
+        Condition::Operator(
+            Operator::And,
+            vec![
+                Condition::Keyword("A".into()),
+                Condition::Keyword("B".into()),
+            ]
+        )
+    )
+}
+```
+
+2. reversed brackets
+```Rust
+fn test_reverse_brackets() {
+    let actual = parse_query_to_condition("A OR B) AND (C OR D").unwrap();
+    assert_eq!(
+        actual,
+        Condition::Operator(
+            Operator::Or,
+            vec![
+                Condition::Keyword("A".into()),
+                Condition::Operator(
+                    Operator::And,
+                    vec![
+                        Condition::Keyword("B".into()),
+                        Condition::Keyword("C".into()),
+                    ]
+                ),
+                Condition::Keyword("D".into()),
+            ]
+        )
+    )
+}
+```
+
+3. wrong number of brackets
+```Rust
+fn test_missing_brackets() {
+    let actual = parse_query_to_condition("(A OR B) AND (C").unwrap();
+    assert_eq!(
+        actual,
+        Condition::Operator(
+            Operator::And,
+            vec![
+                Condition::Operator(
+                    Operator::Or,
+                    vec![
+                        Condition::Keyword("A".into()),
+                        Condition::Keyword("B".into()),
+                    ]
+                ),
+                Condition::Keyword("C".into()),
+            ]
+        )
+    )
+}
+```
+
+4. empty phrase keyword
+```Rust
+fn test_empty_phrase_keywords() {
+    let actual = parse_query_to_condition("A AND \"\" AND B").unwrap();
+    assert_eq!(
+        actual,
+        Condition::Operator(
+            Operator::And,
+            vec![
+                Condition::Keyword("A".into()),
+                Condition::Keyword("B".into()),
+            ]
+        )
+    )
+}
+```
+
+5. wrong number or double quote
+```Rust
+fn test_invalid_double_quote() {
+    let actual = parse_query_to_condition("\"A\" OR \"B OR C").unwrap();
+    assert_eq!(
+        actual,
+        Condition::Operator(
+            Operator::Or,
+            vec![
+                Condition::PhraseKeyword("A".into()),
+                Condition::Keyword("B".into()),
+                Condition::Keyword("C".into()),
+            ]
+        )
+    )
+}
+```
+
+6. and or are next to each other
+```Rust
+fn test_invalid_and_or() {
+    let actual = parse_query_to_condition("A AND OR B").unwrap();
+    assert_eq!(
+        actual,
+        Condition::Operator(
+            Operator::Or,
+            vec![
+                Condition::Keyword("A".into()),
+                Condition::Keyword("B".into()),
+            ]
+        )
+    )
+}
+```
+
+### 7. search query optimization
+```Rust
+fn test_unnecessary_nest_brackets() {
+    let actual = parse_query_to_condition("(A OR (B OR C)) AND D").unwrap();
+    assert_eq!(
+        actual,
+        Condition::Operator(
+            Operator::And,
+            vec![
+                Condition::Operator(
+                    Operator::Or,
+                    vec![
+                        Condition::Keyword("A".into()),
+                        Condition::Keyword("B".into()),
+                        Condition::Keyword("C".into()),
+                    ]
+                ),
+                Condition::Keyword("D".into()),
+            ]
+        )
+    )
+}
+```
