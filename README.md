@@ -71,6 +71,8 @@ pub enum Operator {
 
 ## usage
 
+### 1. for Rust project
+
 ```toml
 [dependencies]
 search-query-parser = "0.1.4"
@@ -81,6 +83,14 @@ use search_query_parser::parse_query_to_condition;
 
 let condition = parse_query_to_condition("any query string you like")?;
 ```
+
+### 2. for REST Api
+
+[refer to search-query-parser-api repository](https://github.com/dimmy82/search-query-parser-api)
+
+### 3. for JVM language via JNI
+
+[refer to search-query-parser-cdylib repository](https://github.com/dimmy82/search-query-parser-cdylib)
 
 ## parse rules
 
