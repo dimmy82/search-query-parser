@@ -31,7 +31,7 @@ impl LayeredQueries {
     }
 
     fn pick_layer_by_bracket(query: Query, bracket_queries: &mut Vec<Query>) -> Result<Query> {
-        let regex_bracket = Regex::new(r"\(([^\(\)]*)\)")?;
+        let regex_bracket = Regex::new(r"\(([^()]*)\)")?;
         let innermost_bracket_removed_query = Query::new(
             regex_bracket
                 .replace_all(query.value_ref(), |captures: &Captures| {
