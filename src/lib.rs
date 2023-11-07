@@ -19,6 +19,34 @@ pub enum Condition {
     Operator(Operator, Vec<Condition>),
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub enum ConditionOnTarget {
+    None,
+    Keyword {
+        condition: String,
+        target: Option<Target>,
+    },
+    PhraseKeyword {
+        condition: String,
+        target: Option<Target>,
+    },
+    Not {
+        condition: Box<ConditionOnTarget>,
+        target: Option<Target>,
+    },
+    Operator {
+        operator: Operator,
+        conditions: Vec<ConditionOnTarget>,
+        target: Option<Target>,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Target {
+    name: String,
+    weight: Option<f32>,
+}
+
 #[derive(Debug, Clone, Eq, PartialEq, Serialize)]
 pub enum Operator {
     And,

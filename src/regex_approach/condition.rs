@@ -1,6 +1,6 @@
 use crate::regex_approach::query::Query;
-use crate::Condition;
 use crate::Condition::Not;
+use crate::{Condition, ConditionOnTarget, Target};
 
 impl Condition {
     pub(crate) fn simplify(self) -> Self {
@@ -60,6 +60,56 @@ impl Condition {
             }
             _ => self,
         }
+    }
+
+    pub(crate) fn identify_target(self) -> ConditionOnTarget {
+        match self {
+            Condition::None => ConditionOnTarget::None,
+            Condition::Keyword(keyword) => {
+                let target_keyword = keyword
+                    .split(&[':', '：'])
+                    .filter(|it| it.is_empty() == false)
+                    .collect::<Vec<&str>>();
+                match target_keyword.len() {
+                    2 => ConditionOnTarget::Keyword {
+                        condition: target_keyword.get(1).unwrap().to_string(),
+                        target: Some(parse_target(target_keyword.get(0).unwrap().to_string())),
+                    },
+                    _ => ConditionOnTarget::Keyword {
+                        condition: keyword,
+                        target: None,
+                    },
+                }
+            }
+            Condition::PhraseKeyword(phrase_keyword) => {
+                todo!()
+            }
+            Not(condition) => {
+                todo!()
+            }
+            Condition::Operator(operator, condition) => {
+                todo!()
+            }
+        }
+    }
+}
+
+fn parse_target(target_str: String) -> Target {
+    let target_weight = target_str.split("^").collect::<Vec<&str>>();
+    match target_weight.len() {
+        2 => Target {
+            name: target_weight.get(0).unwrap().to_string(),
+            weight: target_weight
+                .get(1)
+                .unwrap()
+                .to_string()
+                .parse::<f32>()
+                .map_or(None, |it| Some(it)),
+        },
+        _ => Target {
+            name: target_str,
+            weight: None,
+        },
     }
 }
 
@@ -570,6 +620,121 @@ mod tests {
                         )
                     ]
                 )
+            )
+        }
+    }
+
+    mod test_identify_target {
+        use crate::{Condition, ConditionOnTarget, Target};
+
+        #[test]
+        fn test_identify_target_on_none_condition() {
+            assert_eq!(Condition::None.identify_target(), ConditionOnTarget::None)
+        }
+
+        #[test]
+        fn test_no_identify_target_on_keyword_condition() {
+            assert_eq!(
+                Condition::Keyword("hoge".to_string()).identify_target(),
+                ConditionOnTarget::Keyword {
+                    condition: "hoge".to_string(),
+                    target: None
+                }
+            )
+        }
+
+        #[test]
+        fn test_identify_target_on_keyword_condition() {
+            assert_eq!(
+                Condition::Keyword("hoge:fuga".to_string()).identify_target(),
+                ConditionOnTarget::Keyword {
+                    condition: "fuga".to_string(),
+                    target: Some(Target {
+                        name: "hoge".to_string(),
+                        weight: None
+                    })
+                }
+            )
+        }
+
+        #[test]
+        fn test_identify_target_on_keyword_condition_full_width() {
+            assert_eq!(
+                Condition::Keyword("hoge：fuga".to_string()).identify_target(),
+                ConditionOnTarget::Keyword {
+                    condition: "fuga".to_string(),
+                    target: Some(Target {
+                        name: "hoge".to_string(),
+                        weight: None
+                    })
+                }
+            )
+        }
+
+        #[test]
+        fn test_identify_target_with_i32_weight_on_keyword_condition() {
+            assert_eq!(
+                Condition::Keyword("hoge^2:fuga".to_string()).identify_target(),
+                ConditionOnTarget::Keyword {
+                    condition: "fuga".to_string(),
+                    target: Some(Target {
+                        name: "hoge".to_string(),
+                        weight: Some(2.0)
+                    })
+                }
+            )
+        }
+
+        #[test]
+        fn test_identify_target_with_f32_weight_on_keyword_condition() {
+            assert_eq!(
+                Condition::Keyword("hoge^0.2:fuga".to_string()).identify_target(),
+                ConditionOnTarget::Keyword {
+                    condition: "fuga".to_string(),
+                    target: Some(Target {
+                        name: "hoge".to_string(),
+                        weight: Some(0.2)
+                    })
+                }
+            )
+        }
+
+        #[test]
+        fn test_identify_target_with_nan_weight_on_keyword_condition() {
+            assert_eq!(
+                Condition::Keyword("hoge^2a:fuga".to_string()).identify_target(),
+                ConditionOnTarget::Keyword {
+                    condition: "fuga".to_string(),
+                    target: Some(Target {
+                        name: "hoge".to_string(),
+                        weight: None
+                    })
+                }
+            )
+        }
+
+        #[test]
+        fn test_identify_target_on_keyword_condition_invalid() {
+            assert_eq!(
+                Condition::Keyword("hoge:".to_string()).identify_target(),
+                ConditionOnTarget::Keyword {
+                    condition: "hoge:".to_string(),
+                    target: None
+                }
+            );
+            assert_eq!(
+                Condition::Keyword(":hoge".to_string()).identify_target(),
+                ConditionOnTarget::Keyword {
+                    condition: ":hoge".to_string(),
+                    target: None
+                }
+            );
+            assert_eq!(
+                Condition::Keyword("hoge:fuga:pico".to_string()).identify_target(),
+                ConditionOnTarget::Keyword {
+                    condition: "hoge:fuga:pico".to_string(),
+                    target: None
+                }
             )
         }
     }
